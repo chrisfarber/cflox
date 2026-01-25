@@ -1,7 +1,7 @@
 use clap::Parser;
 
+mod parsing;
 mod run;
-mod tokens;
 
 #[derive(Parser, Debug)]
 #[command(about = "Chris's lox interpreter")]
