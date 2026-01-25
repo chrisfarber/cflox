@@ -48,8 +48,8 @@ pub enum TokenType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    token_type: TokenType,
-    line: usize,
+    pub token_type: TokenType,
+    pub line: usize,
 }
 
 pub struct Scanner {

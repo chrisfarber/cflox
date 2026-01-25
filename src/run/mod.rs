@@ -3,6 +3,7 @@ use std::{
     io::{self, Write},
 };
 
+use crate::parser::Parser;
 use crate::parser::lexing::Scanner;
 
 #[derive(Debug)]
@@ -47,10 +48,23 @@ impl LoxInterpreter {
     }
 
     // parse and execute source code??
-    pub fn run(&mut self, source: &String) {
+    pub fn run(&mut self, source: &str) {
         let scanner = Scanner::new(source);
-        for tok in scanner {
-            println!("read {:?}", tok);
+        let mut parser = Parser::new(scanner.collect());
+        loop {
+            match parser.parse_expression() {
+                Ok(Some(expr)) => {
+                    println!("parsed expr: {:#?}", expr);
+                }
+                Ok(None) => {
+                    println!("done");
+                    break;
+                }
+                Err(er) => {
+                    eprintln!("parse error! {:#?}", er);
+                    break;
+                }
+            }
         }
     }
 
