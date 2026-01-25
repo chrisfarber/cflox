@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::parsing::lexing::Scanner;
+use crate::parser::lexing::Scanner;
 
 #[derive(Debug)]
 pub struct LoxInterpreter {

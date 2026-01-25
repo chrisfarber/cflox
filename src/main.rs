@@ -1,23 +1,14 @@
 use clap::Parser;
 
-mod parsing;
+mod parser;
 mod run;
 
 #[derive(Parser, Debug)]
 #[command(about = "Chris's lox interpreter")]
 struct Cli {
     #[arg()]
-    file: Option<String>, // #[command(subcommand)]
-                          // command: Commands,
+    file: Option<String>,
 }
-
-// #[derive(Subcommand, Debug, Clone)]
-// enum Commands {
-//     Run {
-//         #[arg()]
-//         file: String,
-//     },
-// }
 
 fn main() {
     let eh = "👻 that didn't sound good 🫣 uh 😵‍💫";
