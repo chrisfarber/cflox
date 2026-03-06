@@ -1,7 +1,7 @@
 use clap::Parser;
 
+mod interpreter;
 mod parser;
-mod run;
 
 #[derive(Parser, Debug)]
 #[command(about = "Chris's lox interpreter")]
@@ -12,7 +12,7 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let mut lox = run::LoxInterpreter::new();
+    let mut lox = interpreter::Interpreter::new();
 
     if let Some(file_path) = cli.file {
         lox.run_file(&file_path).expect("could not run file?");
