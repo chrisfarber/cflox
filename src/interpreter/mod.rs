@@ -60,11 +60,25 @@ pub enum LoxError {
 #[derive(Debug)]
 pub struct Interpreter {
     had_error: bool,
+    had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { had_error: false }
+        Self {
+            had_error: false,
+            had_runtime_error: false,
+        }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        if self.had_error {
+            return 65;
+        }
+        if self.had_runtime_error {
+            return 70;
+        }
+        return 0;
     }
 
     pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
@@ -153,16 +167,24 @@ impl Interpreter {
         Ok(())
     }
 
-    // parse and execute source code??
     pub fn run(&mut self, source: &str) {
         let scanner = Scanner::new(source);
         let mut parser = Parser::new(scanner.collect());
         loop {
             match parser.parse_expression() {
                 Ok(Some(expr)) => {
-                    let val = self.evaluate(&expr);
                     println!("parsed: {:#?}", &expr);
-                    println!("=> {:?}", val);
+                    let res = self.evaluate(&expr);
+                    match res {
+                        Ok(val) => {
+                            println!("=> {:?}", val);
+                        }
+                        Err(e) => {
+                            self.had_runtime_error = true;
+                            eprintln!("Runtime error: {}", e);
+                            break;
+                        }
+                    }
                 }
                 Ok(None) => {
                     println!("done");
@@ -170,6 +192,7 @@ impl Interpreter {
                 }
                 Err(er) => {
                     eprintln!("parse error! {:#?}", er);
+                    self.had_error = true;
                     break;
                 }
             }

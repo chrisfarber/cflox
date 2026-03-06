@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use clap::Parser;
 
 mod interpreter;
@@ -19,4 +21,5 @@ fn main() {
     } else {
         lox.run_repl();
     }
+    exit(lox.exit_code());
 }
