@@ -11,12 +11,6 @@ struct Cli {
 }
 
 fn main() {
-    let eh = "👻 that didn't sound good 🫣 uh 😵‍💫";
-    let chars: Vec<char> = eh.chars().collect();
-    let sub: Vec<char> = chars[0..=2].to_vec();
-    println!("first chars {:?}", sub);
-    println!("last char: {}", chars[chars.len() - 1]);
-
     let cli = Cli::parse();
     let mut lox = run::LoxInterpreter::new();
 
