@@ -163,6 +163,9 @@ impl Parser {
 
     pub fn parse_primary(&mut self) -> ParseResult {
         if let Some(next) = self.advance() {
+            if let TokenType::Eof = next.token_type {
+                return Ok(None);
+            }
             Ok(Some(match &next.token_type {
                 TokenType::True => true.into(),
                 TokenType::False => false.into(),
@@ -198,6 +201,13 @@ mod tests {
 
     fn parse(str: &str) -> Expression {
         Parser::from_str(str).parse_expression().unwrap().unwrap()
+    }
+
+    #[test]
+    fn parse_empty() {
+        let mut parser = Parser::from_str("");
+        let expr = parser.parse_expression();
+        assert!(expr.unwrap().is_none());
     }
 
     #[test]
