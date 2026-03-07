@@ -46,6 +46,18 @@ impl Value {
             _ => false,
         }
     }
+
+    /// Build a representation of the value in lox's own syntax.
+    pub fn stringify(&self) -> String {
+        match self {
+            Self::Nil => "nil".into(),
+            Self::Boolean(true) => "true".into(),
+            Self::Boolean(false) => "false".into(),
+            Self::Number(n) => n.to_string(),
+            // This is laughably bad, I know:
+            Self::String(s) => format!("\"{}\"", s),
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -178,7 +190,7 @@ impl Interpreter {
                     let res = self.evaluate(&expr);
                     match res {
                         Ok(val) => {
-                            println!("=> {:?}", val);
+                            println!("{}", val.stringify());
                         }
                         Err(e) => {
                             self.had_runtime_error = true;
@@ -188,7 +200,6 @@ impl Interpreter {
                     }
                 }
                 Ok(None) => {
-                    println!("done");
                     break;
                 }
                 Err(er) => {
