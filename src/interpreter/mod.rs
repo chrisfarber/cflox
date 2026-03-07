@@ -5,8 +5,9 @@ use std::{
 
 use crate::parser::{
     Parser,
-    ast::{Binary, BinaryOp, Expression, Unary},
+    ast::{BinaryOp, Expression, Unary},
 };
+
 use crate::parser::{ast::Literal, lexing::Scanner};
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,8 @@ impl Value {
         }
     }
 
+    /// Would you like to unwrap your value into a number,
+    /// lest a runtime exception? then this is for you
     pub fn get_number(&self) -> Result<f64, LoxError> {
         if let Self::Number(n) = self {
             Ok(*n)
@@ -78,7 +81,7 @@ impl Interpreter {
         if self.had_runtime_error {
             return 70;
         }
-        return 0;
+        0
     }
 
     pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
@@ -89,14 +92,14 @@ impl Interpreter {
             Expression::Literal(Literal::True) => Ok(Value::Boolean(true)),
             Expression::Literal(Literal::False) => Ok(Value::Boolean(false)),
             Expression::Unary(Unary::Negate(inner)) => {
-                if let Value::Number(n) = self.evaluate(&inner)? {
+                if let Value::Number(n) = self.evaluate(inner)? {
                     Ok(Value::Number(-n))
                 } else {
                     Err(LoxError::InvalidNegation)
                 }
             }
             Expression::Unary(Unary::Not(inner)) => {
-                let inner_is_truthy = self.evaluate(&inner)?.is_truthy();
+                let inner_is_truthy = self.evaluate(inner)?.is_truthy();
                 Ok(Value::Boolean(!inner_is_truthy))
             }
             Expression::Binary(binary) => {
@@ -132,7 +135,6 @@ impl Interpreter {
                     BinaryOp::NotEqual => Ok(Value::Boolean(!left.equals(&right))),
                 }
             }
-            _ => Err(LoxError::NotYetImplemented),
         }
     }
 
@@ -173,7 +175,6 @@ impl Interpreter {
         loop {
             match parser.parse_expression() {
                 Ok(Some(expr)) => {
-                    println!("parsed: {:#?}", &expr);
                     let res = self.evaluate(&expr);
                     match res {
                         Ok(val) => {
