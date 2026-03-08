@@ -50,6 +50,8 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub line: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 pub struct Scanner {
@@ -103,14 +105,20 @@ impl Scanner {
 impl Iterator for Scanner {
     type Item = Token;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<Token> {
         if self.finished {
             return None;
         }
+
+        /// location before taking any chars
+        let start = self.current;
+
         if self.is_at_end() {
             self.finished = true;
             return Some(Token {
                 line: self.line,
+                start,
+                end: start,
                 token_type: TokenType::Eof,
             });
         }
@@ -251,8 +259,39 @@ impl Iterator for Scanner {
         };
 
         Some(Token {
+            start,
+            end: self.current,
             token_type,
             line: self.line,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::lexing::Scanner;
+
+    #[test]
+    fn token_indexes() {
+        let mut scanner = Scanner::new("8 - - 2");
+        let eight = scanner.next().unwrap();
+        assert_eq!(eight.start, 0);
+        assert_eq!(eight.end, 1);
+
+        let minus = scanner.next().unwrap();
+        assert_eq!(minus.start, 2);
+        assert_eq!(minus.end, 3);
+
+        let minus2 = scanner.next().unwrap();
+        assert_eq!(minus2.start, 4);
+        assert_eq!(minus2.end, 5);
+    }
+
+    #[test]
+    fn multichar_token_indexes() {
+        let mut scanner = Scanner::new("   \"hello \" ");
+        let str = scanner.next().unwrap();
+        assert_eq!(str.start, 3);
+        assert_eq!(str.end, 11);
     }
 }
