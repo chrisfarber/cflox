@@ -1,5 +1,5 @@
 use crate::parser::{
-    ast::{Binary, BinaryOp},
+    ast::{Binary, BinaryOp, SpannedExpression},
     lexing::{Token, TokenType},
 };
 
@@ -23,9 +23,11 @@ pub struct Parser {
     current: usize,
 }
 
-type ParseResult = Result<Option<ast::Expression>, ParseError>;
+type ParseResult = Result<Option<ast::SpannedExpression>, ParseError>;
 
-fn require_expr(res: ParseResult) -> Result<ast::Expression, ParseError> {
+/// This function takes a parse result and pulls the expression out of it.
+/// If there is no expression contained within, it yields an error.
+fn require_expr(res: ParseResult) -> Result<ast::SpannedExpression, ParseError> {
     match res {
         Ok(Some(expr)) => Ok(expr),
         Ok(None) => Err(ParseError::ExpectedExpression),
@@ -47,6 +49,17 @@ impl Parser {
         let tok = self.tokens.get(self.current);
         self.current += 1;
         tok
+    }
+
+    fn try_advance<T, F>(&mut self, f: F) -> Option<T>
+    where
+        F: Fn(&Token) -> Option<T>,
+    {
+        let out = self.tokens.get(self.current).and_then(f);
+        if out.is_some() {
+            self.current += 1;
+        }
+        out
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -71,6 +84,12 @@ impl Parser {
         }
     }
 
+    // fn try_unary<Next, Op>(&mut self, mut next_parse_fn: Next, op: Op) -> ParseResult
+    // where
+    //     Next: FnMut(&mut Self) -> ParseResult,
+    //     Op: Fn(&TokenType, ) -> SpannedExpression
+    // {}
+
     fn try_binary<P, Op>(&mut self, mut parse_fn: P, op: Op) -> ParseResult
     where
         P: FnMut(&mut Self) -> ParseResult,
@@ -83,14 +102,18 @@ impl Parser {
             {
                 self.advance();
                 let right = require_expr(parse_fn(self))?;
-                res = Ok(Some(
-                    Binary {
-                        left: Box::new(expr),
-                        operator,
-                        right: Box::new(right),
-                    }
-                    .into(),
-                ));
+                let start = expr.start;
+                let end = right.end;
+                let binary = Binary {
+                    left: Box::new(expr),
+                    operator,
+                    right: Box::new(right),
+                };
+                res = Ok(Some(ast::Spanned {
+                    start,
+                    end,
+                    node: binary.into(),
+                }))
             } else {
                 res = Ok(Some(expr));
                 break;
@@ -146,18 +169,21 @@ impl Parser {
     }
 
     pub fn parse_unary(&mut self) -> ParseResult {
-        match self.peek_type() {
-            Some(TokenType::Bang) => {
-                self.advance();
-                let expr = require_expr(self.parse_unary())?;
-                Ok(Some(ast::Unary::not(expr).into()))
-            }
-            Some(TokenType::Minus) => {
-                self.advance();
-                let expr = require_expr(self.parse_unary())?;
-                Ok(Some(ast::Unary::negate(expr).into()))
-            }
-            _ => self.parse_primary(),
+        let unary = self.try_advance(|tok| {
+            let build: Option<fn(Box<SpannedExpression>) -> ast::Unary> = match tok.token_type {
+                TokenType::Bang => Some(ast::Unary::Not),
+                TokenType::Minus => Some(ast::Unary::Negate),
+                _ => None,
+            };
+            build.map(|b| (tok.start, b))
+        });
+        if let Some((start, build)) = unary {
+            let inner = require_expr(self.parse_unary())?;
+            let end = inner.end;
+            let node = ast::Expression::Unary(build(Box::new(inner)));
+            Ok(Some(SpannedExpression { start, end, node }))
+        } else {
+            self.parse_primary()
         }
     }
 
@@ -166,12 +192,16 @@ impl Parser {
             if let TokenType::Eof = next.token_type {
                 return Ok(None);
             }
+
+            let Token { start, end, .. } = *next;
+            let wrap = |node: ast::Expression| SpannedExpression { start, end, node };
+
             Ok(Some(match &next.token_type {
-                TokenType::True => true.into(),
-                TokenType::False => false.into(),
-                TokenType::Nil => ast::Literal::Nil.into(),
-                TokenType::Number(num) => ast::Literal::Number(*num).into(),
-                TokenType::String(str) => ast::Literal::String(str.clone()).into(),
+                TokenType::True => wrap(true.into()),
+                TokenType::False => wrap(false.into()),
+                TokenType::Nil => wrap(ast::Literal::Nil.into()),
+                TokenType::Number(num) => wrap(ast::Literal::Number(*num).into()),
+                TokenType::String(str) => wrap(ast::Literal::String(str.clone()).into()),
                 TokenType::LeftParen => {
                     // should this be primary or expression?
                     // the book appeared to indicate just expression
@@ -192,14 +222,31 @@ impl Parser {
     }
 }
 
+fn literal_token_to_expr(tok: &Token) -> Option<SpannedExpression> {
+    let literal: Option<ast::Literal> = match &tok.token_type {
+        TokenType::True => Some(ast::Literal::True),
+        TokenType::False => Some(ast::Literal::False),
+        TokenType::Nil => Some(ast::Literal::Nil),
+        TokenType::Number(num) => ast::Literal::Number(*num).into(),
+        TokenType::String(str) => ast::Literal::String(str.clone()).into(),
+        _ => None,
+    };
+
+    literal.map(|l| ast::Spanned {
+        start: tok.start,
+        end: tok.end,
+        node: l.into(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::parser::{
         Parser,
-        ast::{Binary, BinaryOp, Expression, Literal, Unary},
+        ast::{Binary, BinaryOp, Expression, Literal, SpannedExpression, Unary},
     };
 
-    fn parse(str: &str) -> Expression {
+    fn parse(str: &str) -> SpannedExpression {
         Parser::from_str(str).parse_expression().unwrap().unwrap()
     }
 

@@ -48,3 +48,4 @@ Right now we track lines, but, we could just as easily track indices into the so
 
 To do this, we'd need to switch the tokens to capturing starting (and ending?) offsets within the source string. 
 
+Unfortunately, when I end up wrapping all the AST exprs with Spanned, things get ... tedious? Non-ergonomic? My use of `Into` breaks everywhere. And it's an extra layer to pattern match through.

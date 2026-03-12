@@ -8,11 +8,20 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Spanned<T> {
+    pub start: usize,
+    pub end: usize,
+    pub node: T,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Unary(Unary),
     Binary(Binary),
 }
+
+pub type SpannedExpression = Spanned<Expression>;
 
 impl From<Literal> for Expression {
     fn from(literal: Literal) -> Expression {
@@ -32,16 +41,16 @@ impl From<bool> for Expression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Unary {
-    Negate(Box<Expression>),
-    Not(Box<Expression>),
+    Negate(Box<SpannedExpression>),
+    Not(Box<SpannedExpression>),
 }
 
 impl Unary {
-    pub fn negate(expr: Expression) -> Self {
+    pub fn negate(expr: SpannedExpression) -> Self {
         Self::Negate(Box::new(expr))
     }
 
-    pub fn not(expr: Expression) -> Self {
+    pub fn not(expr: SpannedExpression) -> Self {
         Self::Not(Box::new(expr))
     }
 }
@@ -68,13 +77,13 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binary {
-    pub left: Box<Expression>,
+    pub left: Box<SpannedExpression>,
     pub operator: BinaryOp,
-    pub right: Box<Expression>,
+    pub right: Box<SpannedExpression>,
 }
 
 impl Binary {
-    pub fn new(left: Expression, operator: BinaryOp, right: Expression) -> Self {
+    pub fn new(left: SpannedExpression, operator: BinaryOp, right: SpannedExpression) -> Self {
         Self {
             left: Box::new(left),
             right: Box::new(right),

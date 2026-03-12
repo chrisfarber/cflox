@@ -5,7 +5,7 @@ use std::{
 
 use crate::parser::{
     Parser,
-    ast::{BinaryOp, Expression, Unary},
+    ast::{BinaryOp, Expression, SpannedExpression, Unary},
 };
 
 use crate::parser::{ast::Literal, lexing::Scanner};
@@ -96,8 +96,8 @@ impl Interpreter {
         0
     }
 
-    pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
-        match expr {
+    pub fn evaluate(&mut self, expr: &SpannedExpression) -> Result<Value, LoxError> {
+        match &expr.node {
             Expression::Literal(Literal::Nil) => Ok(Value::Nil),
             Expression::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
             Expression::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
