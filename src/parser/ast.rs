@@ -97,3 +97,61 @@ impl From<Binary> for Expression {
         Expression::Binary(b)
     }
 }
+
+#[cfg(test)]
+mod test_conversions {
+    use super::*;
+
+    impl<T> Spanned<T> {
+        pub fn untracked(node: T) -> Self {
+            Self {
+                start: 0,
+                end: 0,
+                node,
+            }
+        }
+    }
+
+    impl SpannedExpression {
+        /// Recursively zeros out all spans, for comparison in tests.
+        pub fn strip_spans(self) -> Self {
+            let node = match self.node {
+                Expression::Literal(l) => Expression::Literal(l),
+                Expression::Unary(u) => Expression::Unary(match u {
+                    Unary::Negate(inner) => Unary::Negate(Box::new(inner.strip_spans())),
+                    Unary::Not(inner) => Unary::Not(Box::new(inner.strip_spans())),
+                }),
+                Expression::Binary(b) => Expression::Binary(Binary {
+                    left: Box::new(b.left.strip_spans()),
+                    operator: b.operator,
+                    right: Box::new(b.right.strip_spans()),
+                }),
+            };
+            Spanned::untracked(node)
+        }
+    }
+
+    impl From<Literal> for SpannedExpression {
+        fn from(l: Literal) -> Self {
+            Spanned::untracked(Expression::from(l))
+        }
+    }
+
+    impl From<Unary> for SpannedExpression {
+        fn from(u: Unary) -> Self {
+            Spanned::untracked(Expression::from(u))
+        }
+    }
+
+    impl From<Binary> for SpannedExpression {
+        fn from(b: Binary) -> Self {
+            Spanned::untracked(Expression::from(b))
+        }
+    }
+
+    impl From<bool> for SpannedExpression {
+        fn from(b: bool) -> Self {
+            Spanned::untracked(Expression::from(b))
+        }
+    }
+}

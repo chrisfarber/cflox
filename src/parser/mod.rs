@@ -247,7 +247,11 @@ mod tests {
     };
 
     fn parse(str: &str) -> SpannedExpression {
-        Parser::from_str(str).parse_expression().unwrap().unwrap()
+        Parser::from_str(str)
+            .parse_expression()
+            .unwrap()
+            .unwrap()
+            .strip_spans()
     }
 
     #[test]
@@ -260,7 +264,7 @@ mod tests {
     #[test]
     fn parse_unary() {
         let mut parser = Parser::from_str("!(-10)");
-        let expr1 = parser.parse_unary().unwrap().unwrap();
+        let expr1 = parser.parse_unary().unwrap().unwrap().strip_spans();
         assert_eq!(
             expr1,
             Unary::not(Unary::negate(Literal::Number(10.0).into()).into()).into()
