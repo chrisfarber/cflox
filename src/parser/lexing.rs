@@ -110,7 +110,7 @@ impl Iterator for Scanner {
             return None;
         }
 
-        /// location before taking any chars
+        // location before taking any chars
         let start = self.current;
 
         if self.is_at_end() {

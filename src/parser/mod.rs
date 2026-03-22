@@ -222,23 +222,6 @@ impl Parser {
     }
 }
 
-fn literal_token_to_expr(tok: &Token) -> Option<SpannedExpression> {
-    let literal: Option<ast::Literal> = match &tok.token_type {
-        TokenType::True => Some(ast::Literal::True),
-        TokenType::False => Some(ast::Literal::False),
-        TokenType::Nil => Some(ast::Literal::Nil),
-        TokenType::Number(num) => ast::Literal::Number(*num).into(),
-        TokenType::String(str) => ast::Literal::String(str.clone()).into(),
-        _ => None,
-    };
-
-    literal.map(|l| ast::Spanned {
-        start: tok.start,
-        end: tok.end,
-        node: l.into(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use crate::parser::{
