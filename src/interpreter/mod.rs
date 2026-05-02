@@ -5,7 +5,10 @@ use std::{
 
 use crate::parser::{
     Parser,
-    ast::{BinaryOp, Expression, SpannedExpression, Unary},
+    ast::{
+        BinaryOp, Declaration, Expression, Spanned, SpannedDeclaration, SpannedExpression,
+        SpannedStatement, Statement, Unary,
+    },
 };
 
 use crate::parser::{ast::Literal, lexing::Scanner};
@@ -94,6 +97,36 @@ impl Interpreter {
             return 70;
         }
         0
+    }
+
+    pub fn execute_declaration(&mut self, decl: &SpannedDeclaration) -> Result<(), LoxError> {
+        match &decl.node {
+            Declaration::Statement(stmt) => self.execute_statement(stmt),
+            Declaration::Var {
+                identifier,
+                initial,
+            } => Err(LoxError::NotYetImplemented),
+        }
+    }
+
+    pub fn execute_statement(&mut self, stmt: &SpannedStatement) -> Result<(), LoxError> {
+        match &stmt.node {
+            Statement::Print(expr) => {
+                let val = self.evaluate(expr)?;
+                match val {
+                    Value::String(str) => {
+                        println!("{}", str);
+                    }
+                    other => {
+                        println!("{}", other.stringify());
+                    }
+                }
+            }
+            Statement::Expression(expr) => {
+                self.evaluate(expr)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn evaluate(&mut self, expr: &SpannedExpression) -> Result<Value, LoxError> {
@@ -185,18 +218,27 @@ impl Interpreter {
         let scanner = Scanner::new(source);
         let mut parser = Parser::new(scanner.collect());
         loop {
-            match parser.parse_expression() {
-                Ok(Some(expr)) => {
-                    let res = self.evaluate(&expr);
-                    match res {
-                        Ok(val) => {
-                            println!("{}", val.stringify());
+            match parser.parse_declaration() {
+                Ok(Some(decl)) => {
+                    if let Declaration::Statement(Spanned {
+                        node: Statement::Expression(expr),
+                        start: _,
+                        end: _,
+                    }) = decl.node
+                    {
+                        let res = self.evaluate(&expr);
+                        match res {
+                            Ok(val) => {
+                                println!("{}", val.stringify());
+                            }
+                            Err(e) => {
+                                self.had_runtime_error = true;
+                                eprintln!("Runtime error: {}", e);
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            self.had_runtime_error = true;
-                            eprintln!("Runtime error: {}", e);
-                            break;
-                        }
+                    } else {
+                        self.execute_declaration(&decl);
                     }
                 }
                 Ok(None) => {

@@ -1,5 +1,7 @@
 use crate::parser::{
-    ast::{Binary, BinaryOp, SpannedExpression},
+    ast::{
+        Binary, BinaryOp, Declaration, Spanned, SpannedDeclaration, SpannedExpression, Statement,
+    },
     lexing::{Token, TokenType},
 };
 
@@ -16,6 +18,12 @@ pub enum ParseError {
 
     #[error("Expected expression")]
     ExpectedExpression,
+
+    #[error("Expected identifier")]
+    ExpectedIdentifier,
+
+    #[error("Unexpected end of file")]
+    UnexpectedEof,
 }
 
 pub struct Parser {
@@ -24,6 +32,41 @@ pub struct Parser {
 }
 
 type ParseResult = Result<Option<ast::SpannedExpression>, ParseError>;
+type ParseStatementResult = Result<Option<ast::SpannedStatement>, ParseError>;
+type ParseDeclarationResult = Result<Option<ast::SpannedDeclaration>, ParseError>;
+
+pub trait HasSpan {
+    fn start(&self) -> usize;
+    fn end(&self) -> usize;
+}
+
+impl<T> HasSpan for Spanned<T> {
+    fn start(&self) -> usize {
+        self.start
+    }
+    fn end(&self) -> usize {
+        self.end
+    }
+}
+
+impl HasSpan for Token {
+    fn start(&self) -> usize {
+        self.start
+    }
+    fn end(&self) -> usize {
+        self.end
+    }
+}
+
+impl<T> Spanned<T> {
+    pub fn encapsulating(l: &impl HasSpan, r: &impl HasSpan, node: T) -> Spanned<T> {
+        Self {
+            start: l.start(),
+            end: r.end(),
+            node,
+        }
+    }
+}
 
 /// This function takes a parse result and pulls the expression out of it.
 /// If there is no expression contained within, it yields an error.
@@ -32,6 +75,15 @@ fn require_expr(res: ParseResult) -> Result<ast::SpannedExpression, ParseError> 
         Ok(Some(expr)) => Ok(expr),
         Ok(None) => Err(ParseError::ExpectedExpression),
         Err(err) => Err(err),
+    }
+}
+
+fn require_identifier<'a>(tok: &'a Option<&Token>) -> Result<&'a String, ParseError> {
+    let tok = tok.ok_or(ParseError::ExpectedIdentifier)?;
+    if let TokenType::Identifier(str) = &tok.token_type {
+        Ok(str)
+    } else {
+        Err(ParseError::ExpectedExpression)
     }
 }
 
@@ -122,15 +174,98 @@ impl Parser {
         res
     }
 
-    // Grammar at this point looks like:
-    //
-    // expression -> equality;
-    // equality -> comparison (("!=" | "==") comparison)*;
-    // comparison -> term ((">" | ">=" | "<" | "<=") term)*;
-    // term -> factor (("-" | "+") factor)*;
-    // factor -> unary (("/" | "*") unary)*;
-    // unary -> ("!" | "-") unary | primary;
-    // primary -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")";
+    pub fn parse_declaration(&mut self) -> ParseDeclarationResult {
+        let Some(start_tok) = self.peek() else {
+            return Ok(None);
+        };
+
+        match &start_tok.token_type {
+            TokenType::Var => {
+                let start = start_tok.start;
+                self.advance();
+                let identifier_token = self.advance();
+                let identifier = require_identifier(&identifier_token)?.to_owned();
+
+                let next_tok = self.advance().ok_or(ParseError::UnexpectedEof)?;
+                match next_tok.token_type {
+                    TokenType::Equal => {
+                        let expr = self
+                            .parse_expression()?
+                            .ok_or(ParseError::ExpectedExpression)?;
+
+                        let semi = self.expect_token(TokenType::Semicolon)?;
+                        let end = semi.end;
+                        Ok(Some(SpannedDeclaration {
+                            start,
+                            end,
+                            node: Declaration::Var {
+                                identifier,
+                                initial: Some(expr),
+                            },
+                        }))
+                    }
+                    TokenType::Semicolon => {
+                        let end = next_tok.end;
+                        Ok(Some(SpannedDeclaration {
+                            start,
+                            end,
+                            node: Declaration::Var {
+                                identifier,
+                                initial: None,
+                            },
+                        }))
+                    }
+                    _ => Err(ParseError::UnexpectedToken {
+                        expected: None,
+                        found: Some(next_tok.clone()),
+                    }),
+                }
+            }
+            _ => {
+                let stmt = self.parse_statement()?.map(|stmt| {
+                    let start = stmt.start;
+                    let end = stmt.end;
+                    SpannedDeclaration {
+                        start,
+                        end,
+                        node: Declaration::Statement(stmt),
+                    }
+                });
+                Ok(stmt)
+            }
+        }
+    }
+
+    pub fn parse_statement(&mut self) -> ParseStatementResult {
+        let Some(start_tok) = self.peek() else {
+            return Ok(None);
+        };
+        match &start_tok.token_type {
+            TokenType::Print => {
+                let start = start_tok.start;
+                self.advance();
+                let expr = require_expr(self.parse_expression())?;
+                let semi = self.expect_token(TokenType::Semicolon)?;
+                let end = semi.end;
+                Ok(Some(Spanned {
+                    start,
+                    end,
+                    node: Statement::Print(expr),
+                }))
+            }
+            _ => {
+                let expr = require_expr(self.parse_expression())?;
+                let start = expr.start;
+                let semi = self.expect_token(TokenType::Semicolon)?;
+                let end = semi.end;
+                Ok(Some(Spanned {
+                    start,
+                    end,
+                    node: Statement::Expression(expr),
+                }))
+            }
+        }
+    }
 
     pub fn parse_expression(&mut self) -> ParseResult {
         self.parse_equality()

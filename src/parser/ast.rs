@@ -23,6 +23,25 @@ pub enum Expression {
 
 pub type SpannedExpression = Spanned<Expression>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Statement {
+    Expression(SpannedExpression),
+    Print(SpannedExpression),
+}
+
+pub type SpannedStatement = Spanned<Statement>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Declaration {
+    Statement(SpannedStatement),
+    Var {
+        identifier: String,
+        initial: Option<SpannedExpression>,
+    },
+}
+
+pub type SpannedDeclaration = Spanned<Declaration>;
+
 impl From<Literal> for Expression {
     fn from(literal: Literal) -> Expression {
         Expression::Literal(literal)
