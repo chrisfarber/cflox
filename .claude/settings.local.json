@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(cargo run *)",
+      "Bash(cargo build *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(cargo clippy *)",
+      "Bash(jj *)",
+      "WebFetch(domain:docs.anthropic.com)"
+    ]
+  }
+}
