@@ -1,6 +1,7 @@
 use std::{
     fs::read_to_string,
     io::{self, Write},
+    path::Path,
 };
 
 use crate::parser::{
@@ -208,7 +209,7 @@ impl Interpreter {
     }
 
     /// Run a file
-    pub fn run_file(&mut self, file_path: &String) -> Result<(), ()> {
+    pub fn run_file<T: AsRef<Path>>(&mut self, file_path: T) -> Result<(), ()> {
         let contents = read_to_string(file_path).map_err(|_| ())?;
         self.run(&contents);
         Ok(())
