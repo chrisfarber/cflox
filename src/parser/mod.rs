@@ -324,10 +324,6 @@ impl Parser {
 
     pub fn parse_primary(&mut self) -> ParseResult {
         if let Some(next) = self.advance() {
-            if let TokenType::Eof = next.token_type {
-                return Ok(None);
-            }
-
             let Token { start, end, .. } = *next;
             let wrap = |node: ast::Expression| SpannedExpression { start, end, node };
 

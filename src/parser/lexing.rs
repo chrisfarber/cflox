@@ -42,8 +42,6 @@ pub enum TokenType {
     True,
     Var,
     While,
-
-    Eof,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,9 +56,6 @@ pub struct Scanner {
     source: Vec<char>,
     current: usize,
     line: usize,
-    /// true only after we have emitted our Eof token; no more tokens will be
-    /// emitted after this
-    finished: bool,
 }
 
 impl Scanner {
@@ -70,7 +65,6 @@ impl Scanner {
             source,
             current: 0,
             line: 1,
-            finished: false,
         }
     }
 
@@ -106,22 +100,12 @@ impl Iterator for Scanner {
     type Item = Token;
 
     fn next(&mut self) -> Option<Token> {
-        if self.finished {
+        if self.is_at_end() {
             return None;
         }
 
         // location before taking any chars
         let start = self.current;
-
-        if self.is_at_end() {
-            self.finished = true;
-            return Some(Token {
-                line: self.line,
-                start,
-                end: start,
-                token_type: TokenType::Eof,
-            });
-        }
 
         let c = self
             .advance()
