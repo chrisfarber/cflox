@@ -217,7 +217,7 @@ impl Iterator for Scanner {
                         self.advance();
                     }
                     let ident: String = self.source[start..self.current].iter().collect();
-                    match ident.to_lowercase().as_str() {
+                    match ident.as_str() {
                         "and" => TokenType::And,
                         "class" => TokenType::Class,
                         "else" => TokenType::Else,
