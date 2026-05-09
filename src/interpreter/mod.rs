@@ -239,7 +239,11 @@ impl Interpreter {
                             }
                         }
                     } else {
-                        self.execute_declaration(&decl);
+                        if let Err(err) = self.execute_declaration(&decl) {
+                            self.had_runtime_error = true;
+                            eprintln!("Runtime error: {}", err);
+                            break;
+                        }
                     }
                 }
                 Ok(None) => {
