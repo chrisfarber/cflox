@@ -1,18 +1,21 @@
 use crate::parser::{
-    ast::{
-        Binary, BinaryOp, Declaration, Spanned, SpannedDeclaration, SpannedExpression, Statement,
-    },
-    lexing::{Token, TokenType},
+    ast::{Binary, BinaryOp, Declaration, DeclarationKind, Expression, StatementKind},
+    lexing::scan,
+    span::{Span, Spanned},
+    token::{Token, TokenKind},
 };
 
 pub mod ast;
+pub mod diagnostic;
 pub mod lexing;
+pub mod span;
+pub mod token;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
     #[error("unexpected token encountered")]
     UnexpectedToken {
-        expected: Option<TokenType>,
+        expected: Option<TokenKind>,
         found: Option<Token>,
     },
 
@@ -31,46 +34,13 @@ pub struct Parser {
     current: usize,
 }
 
-type ParseResult = Result<Option<ast::SpannedExpression>, ParseError>;
-type ParseStatementResult = Result<Option<ast::SpannedStatement>, ParseError>;
-type ParseDeclarationResult = Result<Option<ast::SpannedDeclaration>, ParseError>;
-
-pub trait HasSpan {
-    fn start(&self) -> usize;
-    fn end(&self) -> usize;
-}
-
-impl<T> HasSpan for Spanned<T> {
-    fn start(&self) -> usize {
-        self.start
-    }
-    fn end(&self) -> usize {
-        self.end
-    }
-}
-
-impl HasSpan for Token {
-    fn start(&self) -> usize {
-        self.start
-    }
-    fn end(&self) -> usize {
-        self.end
-    }
-}
-
-impl<T> Spanned<T> {
-    pub fn encapsulating(l: &impl HasSpan, r: &impl HasSpan, node: T) -> Spanned<T> {
-        Self {
-            start: l.start(),
-            end: r.end(),
-            node,
-        }
-    }
-}
+type ParseResult = Result<Option<ast::Expression>, ParseError>;
+type ParseStatementResult = Result<Option<ast::Statement>, ParseError>;
+type ParseDeclarationResult = Result<Option<ast::Declaration>, ParseError>;
 
 /// This function takes a parse result and pulls the expression out of it.
 /// If there is no expression contained within, it yields an error.
-fn require_expr(res: ParseResult) -> Result<ast::SpannedExpression, ParseError> {
+fn require_expr(res: ParseResult) -> Result<ast::Expression, ParseError> {
     match res {
         Ok(Some(expr)) => Ok(expr),
         Ok(None) => Err(ParseError::ExpectedExpression),
@@ -80,7 +50,7 @@ fn require_expr(res: ParseResult) -> Result<ast::SpannedExpression, ParseError> 
 
 fn require_identifier<'a>(tok: &'a Option<&Token>) -> Result<&'a String, ParseError> {
     let tok = tok.ok_or(ParseError::ExpectedIdentifier)?;
-    if let TokenType::Identifier(str) = &tok.token_type {
+    if let TokenKind::Identifier(str) = &tok.node {
         Ok(str)
     } else {
         Err(ParseError::ExpectedExpression)
@@ -92,8 +62,10 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
+    #[allow(dead_code)]
     pub fn from_str(str: &str) -> Self {
-        let tokens = lexing::Scanner::new(str).collect();
+        // TODO keep the diagnostics!
+        let (tokens, _) = scan(str);
         Self::new(tokens)
     }
 
@@ -118,14 +90,14 @@ impl Parser {
         self.tokens.get(self.current)
     }
 
-    fn peek_type(&self) -> Option<&TokenType> {
-        self.peek().map(|t| &t.token_type)
+    fn peek_type(&self) -> Option<&TokenKind> {
+        self.peek().map(|t| &t.node)
     }
 
-    fn expect_token(&mut self, expected: TokenType) -> Result<&Token, ParseError> {
+    fn expect_token(&mut self, expected: TokenKind) -> Result<&Token, ParseError> {
         let maybe_token = self.advance();
         if let Some(tok) = maybe_token
-            && tok.token_type == expected
+            && tok.node == expected
         {
             Ok(tok)
         } else {
@@ -145,7 +117,7 @@ impl Parser {
     fn try_binary<P, Op>(&mut self, mut parse_fn: P, op: Op) -> ParseResult
     where
         P: FnMut(&mut Self) -> ParseResult,
-        Op: Fn(&TokenType) -> Option<BinaryOp>,
+        Op: Fn(&TokenKind) -> Option<BinaryOp>,
     {
         let mut res = parse_fn(self);
         while let Ok(Some(expr)) = res {
@@ -154,18 +126,13 @@ impl Parser {
             {
                 self.advance();
                 let right = require_expr(parse_fn(self))?;
-                let start = expr.start;
-                let end = right.end;
                 let binary = Binary {
                     left: Box::new(expr),
                     operator,
                     right: Box::new(right),
                 };
-                res = Ok(Some(ast::Spanned {
-                    start,
-                    end,
-                    node: binary.into(),
-                }))
+
+                res = Ok(Some(binary.into()))
             } else {
                 res = Ok(Some(expr));
                 break;
@@ -174,24 +141,25 @@ impl Parser {
         res
     }
 
+    #[allow(dead_code)]
     fn synchronize(&mut self) {
         loop {
-            let prev = self.advance().map(|t| &t.token_type);
+            let prev = self.advance().map(|t| &t.node);
 
-            if prev == Some(&TokenType::Semicolon) {
+            if prev == Some(&TokenKind::Semicolon) {
                 break;
             }
 
             let cur = self.peek_type();
             match cur {
-                Some(TokenType::Class)
-                | Some(TokenType::Fun)
-                | Some(TokenType::Var)
-                | Some(TokenType::For)
-                | Some(TokenType::If)
-                | Some(TokenType::While)
-                | Some(TokenType::Print)
-                | Some(TokenType::Return) => {
+                Some(TokenKind::Class)
+                | Some(TokenKind::Fun)
+                | Some(TokenKind::Var)
+                | Some(TokenKind::For)
+                | Some(TokenKind::If)
+                | Some(TokenKind::While)
+                | Some(TokenKind::Print)
+                | Some(TokenKind::Return) => {
                     break;
                 }
                 _ => {}
@@ -235,37 +203,35 @@ impl Parser {
             return Ok(None);
         };
 
-        match &start_tok.token_type {
-            TokenType::Var => {
-                let start = start_tok.start;
+        match &start_tok.node {
+            TokenKind::Var => {
+                let start = start_tok.span.start;
                 self.advance();
                 let identifier_token = self.advance();
                 let identifier = require_identifier(&identifier_token)?.to_owned();
 
                 let next_tok = self.advance().ok_or(ParseError::UnexpectedEof)?;
-                match next_tok.token_type {
-                    TokenType::Equal => {
+                match next_tok.node {
+                    TokenKind::Equal => {
                         let expr = self
                             .parse_expression()?
                             .ok_or(ParseError::ExpectedExpression)?;
 
-                        let semi = self.expect_token(TokenType::Semicolon)?;
-                        let end = semi.end;
-                        Ok(Some(SpannedDeclaration {
-                            start,
-                            end,
-                            node: Declaration::Var {
+                        let semi = self.expect_token(TokenKind::Semicolon)?;
+                        let end = semi.span.end;
+                        Ok(Some(Declaration {
+                            span: Span { start, end },
+                            node: DeclarationKind::Var {
                                 identifier,
                                 initial: Some(expr),
                             },
                         }))
                     }
-                    TokenType::Semicolon => {
-                        let end = next_tok.end;
-                        Ok(Some(SpannedDeclaration {
-                            start,
-                            end,
-                            node: Declaration::Var {
+                    TokenKind::Semicolon => {
+                        let end = next_tok.span.end;
+                        Ok(Some(Declaration {
+                            span: Span { start, end },
+                            node: DeclarationKind::Var {
                                 identifier,
                                 initial: None,
                             },
@@ -278,14 +244,9 @@ impl Parser {
                 }
             }
             _ => {
-                let stmt = self.parse_statement()?.map(|stmt| {
-                    let start = stmt.start;
-                    let end = stmt.end;
-                    SpannedDeclaration {
-                        start,
-                        end,
-                        node: Declaration::Statement(stmt),
-                    }
+                let stmt = self.parse_statement()?.map(|stmt| Declaration {
+                    span: stmt.span,
+                    node: DeclarationKind::Statement(stmt),
                 });
                 Ok(stmt)
             }
@@ -296,28 +257,26 @@ impl Parser {
         let Some(start_tok) = self.peek() else {
             return Ok(None);
         };
-        match &start_tok.token_type {
-            TokenType::Print => {
-                let start = start_tok.start;
+        match &start_tok.node {
+            TokenKind::Print => {
+                let start = start_tok.span.start;
                 self.advance();
                 let expr = require_expr(self.parse_expression())?;
-                let semi = self.expect_token(TokenType::Semicolon)?;
-                let end = semi.end;
+                let semi = self.expect_token(TokenKind::Semicolon)?;
+                let end = semi.span.end;
                 Ok(Some(Spanned {
-                    start,
-                    end,
-                    node: Statement::Print(expr),
+                    span: Span { start, end },
+                    node: StatementKind::Print(expr),
                 }))
             }
             _ => {
                 let expr = require_expr(self.parse_expression())?;
-                let start = expr.start;
-                let semi = self.expect_token(TokenType::Semicolon)?;
-                let end = semi.end;
+                let start = expr.span.start;
+                let semi = self.expect_token(TokenKind::Semicolon)?;
+                let end = semi.span.end;
                 Ok(Some(Spanned {
-                    start,
-                    end,
-                    node: Statement::Expression(expr),
+                    span: Span { start, end },
+                    node: StatementKind::Expression(expr),
                 }))
             }
         }
@@ -329,50 +288,53 @@ impl Parser {
 
     pub fn parse_equality(&mut self) -> ParseResult {
         self.try_binary(Self::parse_comparison, |tok_type| match tok_type {
-            TokenType::BangEqual => Some(BinaryOp::NotEqual),
-            TokenType::EqualEqual => Some(BinaryOp::Equal),
+            TokenKind::BangEqual => Some(BinaryOp::NotEqual),
+            TokenKind::EqualEqual => Some(BinaryOp::Equal),
             _ => None,
         })
     }
 
     pub fn parse_comparison(&mut self) -> ParseResult {
         self.try_binary(Self::parse_term, |tok_type| match tok_type {
-            TokenType::Greater => Some(BinaryOp::Greater),
-            TokenType::GreaterEqual => Some(BinaryOp::GreaterEqual),
-            TokenType::Less => Some(BinaryOp::Less),
-            TokenType::LessEqual => Some(BinaryOp::LessEqual),
+            TokenKind::Greater => Some(BinaryOp::Greater),
+            TokenKind::GreaterEqual => Some(BinaryOp::GreaterEqual),
+            TokenKind::Less => Some(BinaryOp::Less),
+            TokenKind::LessEqual => Some(BinaryOp::LessEqual),
             _ => None,
         })
     }
     pub fn parse_term(&mut self) -> ParseResult {
         self.try_binary(Self::parse_factor, |tok_type| match tok_type {
-            TokenType::Plus => Some(BinaryOp::Add),
-            TokenType::Minus => Some(BinaryOp::Subtract),
+            TokenKind::Plus => Some(BinaryOp::Add),
+            TokenKind::Minus => Some(BinaryOp::Subtract),
             _ => None,
         })
     }
     pub fn parse_factor(&mut self) -> ParseResult {
         self.try_binary(Self::parse_unary, |tok_type| match tok_type {
-            TokenType::Slash => Some(BinaryOp::Divide),
-            TokenType::Star => Some(BinaryOp::Multiply),
+            TokenKind::Slash => Some(BinaryOp::Divide),
+            TokenKind::Star => Some(BinaryOp::Multiply),
             _ => None,
         })
     }
 
     pub fn parse_unary(&mut self) -> ParseResult {
         let unary = self.try_advance(|tok| {
-            let build: Option<fn(Box<SpannedExpression>) -> ast::Unary> = match tok.token_type {
-                TokenType::Bang => Some(ast::Unary::Not),
-                TokenType::Minus => Some(ast::Unary::Negate),
+            let build: Option<fn(Box<Expression>) -> ast::Unary> = match tok.node {
+                TokenKind::Bang => Some(ast::Unary::Not),
+                TokenKind::Minus => Some(ast::Unary::Negate),
                 _ => None,
             };
-            build.map(|b| (tok.start, b))
+            build.map(|b| (tok.span.start, b))
         });
         if let Some((start, build)) = unary {
             let inner = require_expr(self.parse_unary())?;
-            let end = inner.end;
-            let node = ast::Expression::Unary(build(Box::new(inner)));
-            Ok(Some(SpannedExpression { start, end, node }))
+            let end = inner.span.end;
+            let node = ast::ExpressionKind::Unary(build(Box::new(inner)));
+            Ok(Some(Expression {
+                span: Span { start, end },
+                node,
+            }))
         } else {
             self.parse_primary()
         }
@@ -380,22 +342,22 @@ impl Parser {
 
     pub fn parse_primary(&mut self) -> ParseResult {
         if let Some(next) = self.advance() {
-            let Token { start, end, .. } = *next;
-            let wrap = |node: ast::Expression| SpannedExpression { start, end, node };
+            let span = next.span;
+            let wrap = |node: ast::ExpressionKind| Expression { span, node };
 
-            Ok(Some(match &next.token_type {
-                TokenType::True => wrap(true.into()),
-                TokenType::False => wrap(false.into()),
-                TokenType::Nil => wrap(ast::Literal::Nil.into()),
-                TokenType::Number(num) => wrap(ast::Literal::Number(*num).into()),
-                TokenType::String(str) => wrap(ast::Literal::String(str.clone()).into()),
-                TokenType::LeftParen => {
+            Ok(Some(match &next.node {
+                TokenKind::True => wrap(true.into()),
+                TokenKind::False => wrap(false.into()),
+                TokenKind::Nil => wrap(ast::Literal::Nil.into()),
+                TokenKind::Number(num) => wrap(ast::Literal::Number(*num).into()),
+                TokenKind::String(str) => wrap(ast::Literal::String(str.clone()).into()),
+                TokenKind::LeftParen => {
                     // should this be primary or expression?
                     // the book appeared to indicate just expression
                     // update: I think it must be expression so it can step
                     // through the precedence ladder again?
                     let inner = require_expr(self.parse_expression())?;
-                    self.expect_token(TokenType::RightParen)?;
+                    self.expect_token(TokenKind::RightParen)?;
                     inner
                 }
                 _ => Err(ParseError::UnexpectedToken {
@@ -413,10 +375,10 @@ impl Parser {
 mod tests {
     use crate::parser::{
         Parser,
-        ast::{Binary, BinaryOp, Expression, Literal, SpannedExpression, Unary},
+        ast::{Binary, BinaryOp, Expression, Literal, Unary},
     };
 
-    fn parse(str: &str) -> SpannedExpression {
+    fn parse(str: &str) -> Expression {
         Parser::from_str(str)
             .parse_expression()
             .unwrap()

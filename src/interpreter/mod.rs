@@ -7,12 +7,14 @@ use std::{
 use crate::parser::{
     Parser,
     ast::{
-        BinaryOp, Declaration, Expression, Spanned, SpannedDeclaration, SpannedExpression,
-        SpannedStatement, Statement, Unary,
+        BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
+        StatementKind, Unary,
     },
+    lexing::scan,
+    span::Spanned,
 };
 
-use crate::parser::{ast::Literal, lexing::Scanner};
+use crate::parser::ast::Literal;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -100,12 +102,12 @@ impl Interpreter {
         0
     }
 
-    pub fn execute_declaration(&mut self, decl: &SpannedDeclaration) -> Result<(), LoxError> {
+    pub fn execute_declaration(&mut self, decl: &Declaration) -> Result<(), LoxError> {
         match &decl.node {
-            Declaration::Statement(stmt) => self.execute_statement(stmt),
-            Declaration::Var {
-                identifier,
-                initial,
+            DeclarationKind::Statement(stmt) => self.execute_statement(stmt),
+            DeclarationKind::Var {
+                identifier: _identifier,
+                initial: _initial,
             } => {
                 println!("we can't yet execute this var decl {:#?}", decl.node);
                 Err(LoxError::NotYetImplemented)
@@ -113,9 +115,9 @@ impl Interpreter {
         }
     }
 
-    pub fn execute_statement(&mut self, stmt: &SpannedStatement) -> Result<(), LoxError> {
+    pub fn execute_statement(&mut self, stmt: &Statement) -> Result<(), LoxError> {
         match &stmt.node {
-            Statement::Print(expr) => {
+            StatementKind::Print(expr) => {
                 let val = self.evaluate(expr)?;
                 match val {
                     Value::String(str) => {
@@ -126,32 +128,32 @@ impl Interpreter {
                     }
                 }
             }
-            Statement::Expression(expr) => {
+            StatementKind::Expression(expr) => {
                 self.evaluate(expr)?;
             }
         }
         Ok(())
     }
 
-    pub fn evaluate(&mut self, expr: &SpannedExpression) -> Result<Value, LoxError> {
+    pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
         match &expr.node {
-            Expression::Literal(Literal::Nil) => Ok(Value::Nil),
-            Expression::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
-            Expression::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
-            Expression::Literal(Literal::True) => Ok(Value::Boolean(true)),
-            Expression::Literal(Literal::False) => Ok(Value::Boolean(false)),
-            Expression::Unary(Unary::Negate(inner)) => {
+            ExpressionKind::Literal(Literal::Nil) => Ok(Value::Nil),
+            ExpressionKind::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
+            ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
+            ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
+            ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
+            ExpressionKind::Unary(Unary::Negate(inner)) => {
                 if let Value::Number(n) = self.evaluate(inner)? {
                     Ok(Value::Number(-n))
                 } else {
                     Err(LoxError::InvalidNegation)
                 }
             }
-            Expression::Unary(Unary::Not(inner)) => {
+            ExpressionKind::Unary(Unary::Not(inner)) => {
                 let inner_is_truthy = self.evaluate(inner)?.is_truthy();
                 Ok(Value::Boolean(!inner_is_truthy))
             }
-            Expression::Binary(binary) => {
+            ExpressionKind::Binary(binary) => {
                 let left = self.evaluate(&binary.left)?;
                 let right = self.evaluate(&binary.right)?;
 
@@ -219,15 +221,14 @@ impl Interpreter {
     }
 
     pub fn run(&mut self, source: &str) {
-        let scanner = Scanner::new(source);
-        let mut parser = Parser::new(scanner.collect());
+        let (tokens, _) = scan(source);
+        let mut parser = Parser::new(tokens);
         loop {
             match parser.parse_declaration() {
                 Ok(Some(decl)) => {
-                    if let Declaration::Statement(Spanned {
-                        node: Statement::Expression(expr),
-                        start: _,
-                        end: _,
+                    if let DeclarationKind::Statement(Spanned {
+                        node: StatementKind::Expression(expr),
+                        span: _,
                     }) = decl.node
                     {
                         let res = self.evaluate(&expr);
@@ -261,12 +262,12 @@ impl Interpreter {
         }
     }
 
-    pub fn error(&mut self, line: usize, message: &String) {
-        self.report(line, &"".to_owned(), message);
-    }
+    // pub fn error(&mut self, line: usize, message: &String) {
+    //     self.report(line, &"".to_owned(), message);
+    // }
 
-    pub fn report(&mut self, line: usize, where_at: &String, message: &String) {
-        eprintln!("[line {}] Error {}: {}", line, where_at, message);
-        self.had_error = true;
-    }
+    // pub fn report(&mut self, line: usize, where_at: &String, message: &String) {
+    //     eprintln!("[line {}] Error {}: {}", line, where_at, message);
+    //     self.had_error = true;
+    // }
 }

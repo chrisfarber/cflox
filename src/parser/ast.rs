@@ -1,55 +1,51 @@
+use crate::parser::span::Spanned;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
     String(String),
+    // TODO should this be Bool(bool) ?
     True,
     False,
     Nil,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T> {
-    pub start: usize,
-    pub end: usize,
-    pub node: T,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
+pub enum ExpressionKind {
     Literal(Literal),
     Unary(Unary),
     Binary(Binary),
 }
 
-pub type SpannedExpression = Spanned<Expression>;
+pub type Expression = Spanned<ExpressionKind>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
-    Expression(SpannedExpression),
-    Print(SpannedExpression),
+pub enum StatementKind {
+    Expression(Expression),
+    Print(Expression),
 }
 
-pub type SpannedStatement = Spanned<Statement>;
+pub type Statement = Spanned<StatementKind>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Declaration {
-    Statement(SpannedStatement),
+pub enum DeclarationKind {
+    Statement(Statement),
     Var {
         identifier: String,
-        initial: Option<SpannedExpression>,
+        initial: Option<Expression>,
     },
 }
 
-pub type SpannedDeclaration = Spanned<Declaration>;
+pub type Declaration = Spanned<DeclarationKind>;
 
-impl From<Literal> for Expression {
-    fn from(literal: Literal) -> Expression {
-        Expression::Literal(literal)
+impl From<Literal> for ExpressionKind {
+    fn from(literal: Literal) -> ExpressionKind {
+        ExpressionKind::Literal(literal)
     }
 }
 
-impl From<bool> for Expression {
-    fn from(b: bool) -> Expression {
+impl From<bool> for ExpressionKind {
+    fn from(b: bool) -> ExpressionKind {
         match b {
             true => Literal::True,
             false => Literal::False,
@@ -60,23 +56,13 @@ impl From<bool> for Expression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Unary {
-    Negate(Box<SpannedExpression>),
-    Not(Box<SpannedExpression>),
+    Negate(Box<Expression>),
+    Not(Box<Expression>),
 }
 
-impl Unary {
-    pub fn negate(expr: SpannedExpression) -> Self {
-        Self::Negate(Box::new(expr))
-    }
-
-    pub fn not(expr: SpannedExpression) -> Self {
-        Self::Not(Box::new(expr))
-    }
-}
-
-impl From<Unary> for Expression {
-    fn from(u: Unary) -> Expression {
-        Expression::Unary(u)
+impl From<Unary> for ExpressionKind {
+    fn from(u: Unary) -> ExpressionKind {
+        ExpressionKind::Unary(u)
     }
 }
 
@@ -96,51 +82,67 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binary {
-    pub left: Box<SpannedExpression>,
+    pub left: Box<Expression>,
     pub operator: BinaryOp,
-    pub right: Box<SpannedExpression>,
+    pub right: Box<Expression>,
 }
 
-impl Binary {
-    pub fn new(left: SpannedExpression, operator: BinaryOp, right: SpannedExpression) -> Self {
-        Self {
-            left: Box::new(left),
-            right: Box::new(right),
-            operator,
-        }
+impl From<Binary> for ExpressionKind {
+    fn from(b: Binary) -> ExpressionKind {
+        ExpressionKind::Binary(b)
     }
 }
 
 impl From<Binary> for Expression {
     fn from(b: Binary) -> Expression {
-        Expression::Binary(b)
+        Expression::encapsulating(b.left.span, b.right.span, b.into())
     }
 }
 
 #[cfg(test)]
 mod test_conversions {
+    use crate::parser::span::Span;
+
     use super::*;
+
+    impl Unary {
+        pub fn negate(expr: Expression) -> Self {
+            Self::Negate(Box::new(expr))
+        }
+        pub fn not(expr: Expression) -> Self {
+            Self::Not(Box::new(expr))
+        }
+    }
+
+    impl Binary {
+        pub fn new(left: Expression, operator: BinaryOp, right: Expression) -> Self {
+            Self {
+                left: Box::new(left),
+                right: Box::new(right),
+                operator,
+            }
+        }
+    }
 
     impl<T> Spanned<T> {
         pub fn untracked(node: T) -> Self {
             Self {
-                start: 0,
-                end: 0,
+                span: Span { start: 0, end: 0 },
                 node,
             }
         }
     }
 
-    impl SpannedExpression {
+    impl Expression {
         /// Recursively zeros out all spans, for comparison in tests.
         pub fn strip_spans(self) -> Self {
             let node = match self.node {
-                Expression::Literal(l) => Expression::Literal(l),
-                Expression::Unary(u) => Expression::Unary(match u {
+                ExpressionKind::Literal(l) => ExpressionKind::Literal(l),
+                ExpressionKind::Unary(u) => ExpressionKind::Unary(match u {
                     Unary::Negate(inner) => Unary::Negate(Box::new(inner.strip_spans())),
                     Unary::Not(inner) => Unary::Not(Box::new(inner.strip_spans())),
                 }),
-                Expression::Binary(b) => Expression::Binary(Binary {
+                ExpressionKind::Binary(b) => ExpressionKind::Binary(Binary {
                     left: Box::new(b.left.strip_spans()),
                     operator: b.operator,
                     right: Box::new(b.right.strip_spans()),
@@ -150,27 +152,21 @@ mod test_conversions {
         }
     }
 
-    impl From<Literal> for SpannedExpression {
+    impl From<Literal> for Expression {
         fn from(l: Literal) -> Self {
-            Spanned::untracked(Expression::from(l))
+            Spanned::untracked(ExpressionKind::from(l))
         }
     }
 
-    impl From<Unary> for SpannedExpression {
+    impl From<Unary> for Expression {
         fn from(u: Unary) -> Self {
-            Spanned::untracked(Expression::from(u))
+            Spanned::untracked(ExpressionKind::from(u))
         }
     }
 
-    impl From<Binary> for SpannedExpression {
-        fn from(b: Binary) -> Self {
-            Spanned::untracked(Expression::from(b))
-        }
-    }
-
-    impl From<bool> for SpannedExpression {
+    impl From<bool> for Expression {
         fn from(b: bool) -> Self {
-            Spanned::untracked(Expression::from(b))
+            Spanned::untracked(ExpressionKind::from(b))
         }
     }
 }
