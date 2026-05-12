@@ -106,7 +106,10 @@ impl Interpreter {
             Declaration::Var {
                 identifier,
                 initial,
-            } => Err(LoxError::NotYetImplemented),
+            } => {
+                println!("we can't yet execute this var decl {:#?}", decl.node);
+                Err(LoxError::NotYetImplemented)
+            }
         }
     }
 

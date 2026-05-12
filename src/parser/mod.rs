@@ -174,7 +174,63 @@ impl Parser {
         res
     }
 
+    fn synchronize(&mut self) {
+        loop {
+            let prev = self.advance().map(|t| &t.token_type);
+
+            if prev == Some(&TokenType::Semicolon) {
+                break;
+            }
+
+            let cur = self.peek_type();
+            match cur {
+                Some(TokenType::Class)
+                | Some(TokenType::Fun)
+                | Some(TokenType::Var)
+                | Some(TokenType::For)
+                | Some(TokenType::If)
+                | Some(TokenType::While)
+                | Some(TokenType::Print)
+                | Some(TokenType::Return) => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn parse_declaration(&mut self) -> ParseDeclarationResult {
+        // What should we actually do about this error? Things are complicated.
+        // We can still continue to parse useful AST fragments, so that we can do LSP
+        // things or continue to find more syntax errors. However we can't surface the
+        // parse error if we continue on.
+        //
+        // This makes me question my use of the result type. We actually want to report
+        // the parsed AST _and_ a set of errors, where an empty set means successful
+        // parsing.
+        //
+        // And then all of the errors should point to spans in the code.
+        //
+        // Similarly, I'm wondering if it was a mistake to even bother lexing and parsing
+        // in "streams".
+        //
+        // I also wonder what should happen when lexing fails. Is it better to emit the
+        // list of valid tokens alongside a set of errors (with spans)? When parsing,
+        // the parser will run with the (probably invalid) tokens and report the errors
+        // from lexing along with its additional parse errors?
+
+        self.parse_declaration_inner()
+        // loop {
+        //     let res = self.parse_declaration_inner();
+        //     if res.is_err() {
+        //         self.synchronize();
+        //     } else {
+        //         return res;
+        //     }
+        // }
+    }
+
+    pub fn parse_declaration_inner(&mut self) -> ParseDeclarationResult {
         let Some(start_tok) = self.peek() else {
             return Ok(None);
         };
