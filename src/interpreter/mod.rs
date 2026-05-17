@@ -5,12 +5,12 @@ use std::{
 };
 
 use crate::parser::{
-    Parser,
     ast::{
         BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
         StatementKind, Unary,
     },
-    lexing::scan,
+    diagnostic::Severity,
+    parse_str,
     span::Spanned,
 };
 
@@ -109,7 +109,7 @@ impl Interpreter {
                 identifier: _identifier,
                 initial: _initial,
             } => {
-                println!("we can't yet execute this var decl {:#?}", decl.node);
+                println!("we can't yet execute this var decl {:#?}", decl);
                 Err(LoxError::NotYetImplemented)
             }
         }
@@ -221,42 +221,41 @@ impl Interpreter {
     }
 
     pub fn run(&mut self, source: &str) {
-        let (tokens, _) = scan(source);
-        let mut parser = Parser::new(tokens);
-        loop {
-            match parser.parse_declaration() {
-                Ok(Some(decl)) => {
-                    if let DeclarationKind::Statement(Spanned {
-                        node: StatementKind::Expression(expr),
-                        span: _,
-                    }) = decl.node
-                    {
-                        let res = self.evaluate(&expr);
-                        match res {
-                            Ok(val) => {
-                                println!("{}", val.stringify());
-                            }
-                            Err(e) => {
-                                self.had_runtime_error = true;
-                                eprintln!("Runtime error: {}", e);
-                                break;
-                            }
+        let (decls, diags) = parse_str(source);
+        if diags.iter().any(|d| d.severity == Severity::Error) {
+            for diag in diags {
+                eprintln!("parse error: {:#?}", diag);
+            }
+            eprintln!("parsed AST: {:#?}", decls);
+        } else {
+            for decl in decls {
+                if let DeclarationKind::Statement(Spanned {
+                    node: StatementKind::Expression(expr),
+                    span: _,
+                }) = decl.node
+                {
+                    // Here we are in a special case: the declaration is actually a
+                    // statement containing an expression.
+                    //
+                    // We want to print the result of the expression, so, we bypass
+                    // `execute_declaration()` and call `evaluate()` directly.
+                    let res = self.evaluate(&expr);
+                    match res {
+                        Ok(val) => {
+                            println!("{}", val.stringify());
                         }
-                    } else {
-                        if let Err(err) = self.execute_declaration(&decl) {
+                        Err(e) => {
                             self.had_runtime_error = true;
-                            eprintln!("Runtime error: {}", err);
+                            eprintln!("Runtime error: {}", e);
                             break;
                         }
                     }
-                }
-                Ok(None) => {
-                    break;
-                }
-                Err(er) => {
-                    eprintln!("parse error! {:#?}", er);
-                    self.had_error = true;
-                    break;
+                } else {
+                    if let Err(err) = self.execute_declaration(&decl) {
+                        self.had_runtime_error = true;
+                        eprintln!("Runtime error: {}", err);
+                        break;
+                    }
                 }
             }
         }
