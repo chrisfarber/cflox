@@ -41,12 +41,9 @@ impl Scanner {
     }
 
     /// Given a token type, build a Token
-    fn push_token(&mut self, token_type: TokenKind) {
+    fn push_token(&mut self, kind: TokenKind) {
         let span = self.current_span();
-        let token = Token {
-            span,
-            node: token_type,
-        };
+        let token = Token { span, node: kind };
         self.tokens.push(token);
     }
 
@@ -103,7 +100,6 @@ impl Scanner {
                     }
                 }
                 '/' => {
-                    // TODO test that comments don't throw off spans
                     if self.match_next('/') {
                         while self.peek() != Some(&'\n') {
                             self.advance();
@@ -126,8 +122,12 @@ impl Scanner {
                             }
                             content_end = self.current;
                         } else {
-                            // TODO replace with diagnostic
-                            panic!("unexpected end of string");
+                            self.diagnostics.push(Diagnostic::error(
+                                self.current_span(),
+                                "unexpected end of file",
+                            ));
+                            // no need to drop chars because this should be the end; actually, bail
+                            return;
                         }
                     }
                     self.push_token(TokenKind::String(
@@ -224,7 +224,7 @@ pub fn scan(source: &str) -> ScanResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{lexing::scan, span::Span, token::TokenKind};
+    use crate::parser::{diagnostic::Severity, lexing::scan, span::Span, token::TokenKind};
 
     #[test]
     fn token_indexes() {
@@ -248,5 +248,35 @@ mod tests {
         let token = &tokens[0];
         assert_eq!(token.span, Span { start: 3, end: 11 });
         assert_eq!(token.node, TokenKind::String("hello ".into()));
+    }
+
+    #[test]
+    fn comments_and_spans() {
+        let source = r#"
+hello
+// this is a comment
+// and so is this!
+true
+            "#;
+        let (tokens, diagnostics) = scan(source);
+        assert!(diagnostics.is_empty());
+        let hello = &tokens[0];
+        let lit_true = &tokens[1];
+        assert_eq!(hello.span.in_source(source), "hello");
+        assert_eq!(lit_true.span.in_source(source), "true");
+    }
+
+    #[test]
+    fn unclosed_string() {
+        let source = "   nil 4 + \"a string that never ends ";
+        let (tokens, diagnostics) = scan(source);
+        assert_eq!(diagnostics.len(), 1);
+        let diag = &diagnostics[0];
+        assert_eq!(diag.severity, Severity::Error);
+        assert_eq!(diag.message, "unexpected end of file");
+        assert_eq!(diag.span.in_source(source), "\"a string that never ends ");
+
+        let last_token = tokens.last().unwrap();
+        assert_eq!(last_token.node, TokenKind::Plus);
     }
 }

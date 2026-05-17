@@ -2,6 +2,7 @@ use crate::parser::span::Span;
 
 /// How severe is a diagnostic?
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Severity {
     Error,
     Warning,
@@ -10,6 +11,7 @@ pub enum Severity {
 
 /// A problem to report to the human.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub span: Span,

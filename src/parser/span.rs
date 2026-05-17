@@ -4,6 +4,13 @@ pub struct Span {
     pub end: usize,
 }
 
+impl Span {
+    #[allow(dead_code)]
+    pub fn in_source<'a>(&self, source: &'a str) -> &'a str {
+        &source[self.start..self.end]
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {
     pub span: Span,
