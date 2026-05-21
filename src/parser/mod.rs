@@ -52,9 +52,17 @@ impl Parser {
     fn current_span(&self) -> Span {
         self.tokens
             .get(self.current)
-            .or_else(|| self.tokens.last())
             .map(|tok| tok.span)
-            .unwrap_or_else(|| Span { start: 0, end: 0 })
+            .unwrap_or_else(|| {
+                let mut pos = 0;
+                if let Some(tok) = self.tokens.last() {
+                    pos = tok.span.start + tok.span.end
+                }
+                return Span {
+                    start: pos,
+                    end: pos,
+                };
+            })
     }
 
     fn peek(&self) -> Option<&Token> {
