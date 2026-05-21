@@ -308,8 +308,7 @@ pub fn parse_str(source: &str) -> ParseResult {
 mod tests {
     use crate::parser::{
         Parser,
-        ast::{Binary, BinaryOp, Literal, Unary},
-        diagnostic,
+        ast::{Binary, BinaryOp, Expression, Literal, Unary},
         lexing::scan,
         parse_str,
     };
@@ -317,6 +316,11 @@ mod tests {
     fn parser_from_str(str: &str) -> Parser {
         let (tokens, diagnostics) = scan(str);
         Parser::new(tokens, diagnostics)
+    }
+
+    fn parse_expr(src: &str) -> Expression {
+        let mut parser = parser_from_str(src);
+        parser.parse_expression().unwrap()
     }
 
     #[test]
@@ -338,15 +342,14 @@ mod tests {
 
     #[test]
     fn parse_not_bool() {
-        let (decls, _) = parse_str("!!false");
-        let expr = decls[0].node;
+        let expr = parse_expr("!!false");
         assert_eq!(expr, Unary::not(Unary::not(false.into()).into()).into())
     }
 
     #[test]
     fn parse_factor() {
         assert_eq!(
-            parse("10 / 10"),
+            parse_expr("10 / 10"),
             Binary {
                 left: Box::new(Literal::Number(10.0).into()),
                 operator: BinaryOp::Divide,
@@ -359,7 +362,7 @@ mod tests {
     #[test]
     fn parse_complex() {
         assert_eq!(
-            parse("-(\"hello\" >= 4)"),
+            parse_expr("-(\"hello\" >= 4)"),
             Unary::negate(
                 Binary::new(
                     Literal::String("hello".to_owned()).into(),
@@ -372,7 +375,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse("-10 - 4 - - 12 / 64 * 9 + 2"),
+            parse_expr("-10 - 4 - - 12 / 64 * 9 + 2"),
             Binary::new(
                 Binary::new(
                     Binary::new(
