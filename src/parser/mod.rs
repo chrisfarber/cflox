@@ -283,6 +283,7 @@ impl Parser {
                 let right_paren = self.expect_token(TokenKind::RightParen)?;
                 Ok(Expression::encapsulating(&next, right_paren, inner.node))
             }
+            // TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
             _ => Err(Diagnostic::error(&next, "unexpected token")),
         }
     }

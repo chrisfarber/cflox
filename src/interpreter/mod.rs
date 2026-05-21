@@ -4,79 +4,24 @@ use std::{
     path::Path,
 };
 
-use crate::parser::{
-    ast::{
-        BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
-        StatementKind, Unary,
+use crate::{
+    interpreter::{error::LoxError, value::Value},
+    parser::{
+        ast::{
+            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
+            StatementKind, Unary,
+        },
+        diagnostic::Severity,
+        parse_str,
+        span::Spanned,
     },
-    diagnostic::Severity,
-    parse_str,
-    span::Spanned,
 };
 
 use crate::parser::ast::Literal;
 
-#[derive(Debug, Clone)]
-pub enum Value {
-    Nil,
-    Boolean(bool),
-    Number(f64),
-    String(String),
-}
-
-impl Value {
-    pub fn is_truthy(&self) -> bool {
-        match *self {
-            Self::Nil => false,
-            Self::Boolean(b) => b,
-            _ => true,
-        }
-    }
-
-    /// Would you like to unwrap your value into a number,
-    /// lest a runtime exception? then this is for you
-    pub fn get_number(&self) -> Result<f64, LoxError> {
-        if let Self::Number(n) = self {
-            Ok(*n)
-        } else {
-            Err(LoxError::ExpectedNumber)
-        }
-    }
-
-    pub fn equals(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Nil, Self::Nil) => true,
-            (Self::Boolean(l), Self::Boolean(r)) => l == r,
-            (Self::Number(l), Self::Number(r)) => l == r,
-            (Self::String(l), Self::String(r)) => l == r,
-            _ => false,
-        }
-    }
-
-    /// Build a representation of the value in lox's own syntax.
-    pub fn stringify(&self) -> String {
-        match self {
-            Self::Nil => "nil".into(),
-            Self::Boolean(true) => "true".into(),
-            Self::Boolean(false) => "false".into(),
-            Self::Number(n) => n.to_string(),
-            // This is laughably bad, I know:
-            Self::String(s) => format!("\"{}\"", s),
-        }
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum LoxError {
-    #[error("can only negate numbers")]
-    InvalidNegation,
-    #[error("not yet implemented")]
-    NotYetImplemented,
-    #[error("expected value to be a number")]
-    ExpectedNumber,
-    #[error("can only add two numbers or two strings")]
-    InvalidAdd,
-}
+mod environment;
+mod error;
+mod value;
 
 #[derive(Debug)]
 pub struct Interpreter {
