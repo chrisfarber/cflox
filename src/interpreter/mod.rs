@@ -5,7 +5,8 @@ use std::{
 };
 
 use crate::{
-    interpreter::{error::LoxError, value::Value},
+    gc::{Gc, Heap},
+    interpreter::{environment::Environment, error::LoxError, value::Value},
     parser::{
         ast::{
             BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
@@ -25,13 +26,19 @@ mod value;
 
 #[derive(Debug)]
 pub struct Interpreter {
+    heap: Heap,
+    environment: Gc<Environment>,
     had_error: bool,
     had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut heap = Heap::new();
+        let environment = heap.alloc(Environment::new());
         Self {
+            heap,
+            environment,
             had_error: false,
             had_runtime_error: false,
         }
@@ -51,11 +58,16 @@ impl Interpreter {
         match &decl.node {
             DeclarationKind::Statement(stmt) => self.execute_statement(stmt),
             DeclarationKind::Var {
-                identifier: _identifier,
-                initial: _initial,
+                identifier,
+                initial,
             } => {
-                println!("we can't yet execute this var decl {:#?}", decl);
-                Err(LoxError::NotYetImplemented)
+                let value = if let Some(expr) = initial {
+                    self.evaluate(expr)?
+                } else {
+                    Value::Nil
+                };
+                self.environment.define(identifier, value);
+                Ok(())
             }
         }
     }
@@ -87,6 +99,12 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
             ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
             ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
+            ExpressionKind::Variable(ident) => self.environment.get(ident),
+            ExpressionKind::Assign(ident, inner) => {
+                let value = self.evaluate(inner)?;
+                self.environment.assign(ident, value.clone())?;
+                Ok(value)
+            }
             ExpressionKind::Unary(Unary::Negate(inner)) => {
                 if let Value::Number(n) = self.evaluate(inner)? {
                     Ok(Value::Number(-n))

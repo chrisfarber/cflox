@@ -1,5 +1,8 @@
 use crate::parser::{
-    ast::{Binary, BinaryOp, Declaration, DeclarationKind, Expression, Statement, StatementKind},
+    ast::{
+        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
+        StatementKind,
+    },
     diagnostic::Diagnostic,
     lexing::scan,
     span::{Span, Spanned},
@@ -58,10 +61,10 @@ impl Parser {
                 if let Some(tok) = self.tokens.last() {
                     pos = tok.span.start + tok.span.end
                 }
-                return Span {
+                Span {
                     start: pos,
                     end: pos,
-                };
+                }
             })
     }
 
@@ -214,7 +217,27 @@ impl Parser {
     }
 
     pub fn parse_expression(&mut self) -> ParseExpressionResult {
-        self.parse_equality()
+        self.parse_assignment()
+    }
+
+    pub fn parse_assignment(&mut self) -> ParseExpressionResult {
+        let expr = self.parse_equality()?;
+
+        if self.peek_type() == Some(&TokenKind::Equal) {
+            self.advance()?;
+            let value = self.parse_assignment()?;
+            if let ExpressionKind::Variable(ident) = expr.node {
+                Ok(Expression::encapsulating(
+                    expr.span,
+                    value.span,
+                    ExpressionKind::Assign(ident, Box::new(value)),
+                ))
+            } else {
+                Err(Diagnostic::error(expr.span, "Invalid assignment target"))
+            }
+        } else {
+            Ok(expr)
+        }
     }
 
     pub fn parse_equality(&mut self) -> ParseExpressionResult {
@@ -283,7 +306,7 @@ impl Parser {
                 let right_paren = self.expect_token(TokenKind::RightParen)?;
                 Ok(Expression::encapsulating(&next, right_paren, inner.node))
             }
-            // TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
+            TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
             _ => Err(Diagnostic::error(&next, "unexpected token")),
         }
     }

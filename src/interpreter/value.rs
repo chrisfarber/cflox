@@ -1,6 +1,6 @@
 use crate::interpreter::error::LoxError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Nil,
     Boolean(bool),

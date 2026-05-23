@@ -15,7 +15,8 @@ pub enum ExpressionKind {
     Literal(Literal),
     Unary(Unary),
     Binary(Binary),
-    // Variable(String),
+    Variable(String),
+    Assign(String, Box<Expression>),
 }
 
 pub type Expression = Spanned<ExpressionKind>;
@@ -149,6 +150,9 @@ mod test_conversions {
                     right: Box::new(b.right.strip_spans()),
                 }),
                 ExpressionKind::Variable(ident) => ExpressionKind::Variable(ident),
+                ExpressionKind::Assign(ident, inner) => {
+                    ExpressionKind::Assign(ident, Box::new(inner.strip_spans()))
+                }
             };
             Spanned::untracked(node)
         }
