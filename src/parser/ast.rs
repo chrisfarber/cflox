@@ -25,6 +25,7 @@ pub type Expression = Spanned<ExpressionKind>;
 pub enum StatementKind {
     Expression(Expression),
     Print(Expression),
+    Block(Vec<Declaration>),
 }
 
 pub type Statement = Spanned<StatementKind>;

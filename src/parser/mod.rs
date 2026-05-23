@@ -203,6 +203,27 @@ impl Parser {
                     node: StatementKind::Print(expr),
                 })
             }
+            Some(TokenKind::LeftBrace) => {
+                let start = self.advance()?.span.start;
+                let mut decls = Vec::<Declaration>::new();
+                loop {
+                    match self.peek_type() {
+                        Some(TokenKind::RightBrace) | None => {
+                            break;
+                        }
+                        _ => {
+                            decls.push(self.parse_declaration()?);
+                        }
+                    }
+                }
+
+                let semi = self.expect_token(TokenKind::RightBrace)?;
+                let end = semi.end;
+                Ok(Spanned {
+                    span: Span { start, end },
+                    node: StatementKind::Block(decls),
+                })
+            }
             _ => {
                 let expr = self.parse_expression()?;
                 let expr_span = expr.span;

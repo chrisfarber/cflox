@@ -88,6 +88,21 @@ impl Interpreter {
             StatementKind::Expression(expr) => {
                 self.evaluate(expr)?;
             }
+            StatementKind::Block(decls) => {
+                let previous = self.environment;
+                let mut result = Ok(());
+                self.environment = self.heap.alloc(Environment::new_with_parent(previous));
+
+                for stmt in decls {
+                    result = self.execute_declaration(stmt);
+                    if result.is_err() {
+                        break;
+                    }
+                }
+
+                self.environment = previous;
+                return result;
+            }
         }
         Ok(())
     }
