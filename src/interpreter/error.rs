@@ -9,6 +9,6 @@ pub enum LoxError {
     ExpectedNumber,
     #[error("can only add two numbers or two strings")]
     InvalidAdd,
-    #[error("undefined variable")]
-    UndefinedVariable,
+    #[error("undefined variable: {name:?}")]
+    UndefinedVariable { name: String },
 }

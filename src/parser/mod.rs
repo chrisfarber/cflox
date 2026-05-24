@@ -1,7 +1,7 @@
 use crate::parser::{
     ast::{
-        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
-        StatementKind,
+        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Logical,
+        Statement, StatementKind,
     },
     diagnostic::Diagnostic,
     lexing::scan,
@@ -224,6 +224,8 @@ impl Parser {
                     node: StatementKind::Block(decls),
                 })
             }
+            Some(TokenKind::If) => self.parse_if_statement(),
+            Some(TokenKind::While) => self.parse_while_statement(),
             _ => {
                 let expr = self.parse_expression()?;
                 let expr_span = expr.span;
@@ -237,12 +239,57 @@ impl Parser {
         }
     }
 
+    pub fn parse_if_statement(&mut self) -> ParseStatementResult {
+        let start = self.expect_token(TokenKind::If)?.start;
+
+        self.expect_token(TokenKind::LeftParen)?;
+        let condition = self.parse_expression()?;
+        self.expect_token(TokenKind::RightParen)?;
+
+        let then_branch = Box::new(self.parse_statement()?);
+        let mut end = then_branch.span.end;
+
+        let mut else_branch = None;
+        if self.peek_type() == Some(&TokenKind::Else) {
+            self.advance()?;
+            let else_stmt = self.parse_statement()?;
+            end = else_stmt.span.end;
+            else_branch = Some(Box::new(else_stmt));
+        }
+
+        Ok(Statement {
+            span: Span { start, end },
+            node: StatementKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        })
+    }
+
+    pub fn parse_while_statement(&mut self) -> ParseStatementResult {
+        let while_span = self.expect_token(TokenKind::While)?;
+        self.expect_token(TokenKind::LeftParen)?;
+        let condition = self.parse_expression()?;
+        self.expect_token(TokenKind::RightParen)?;
+        let body = self.parse_statement()?;
+
+        Ok(Statement::encapsulating(
+            while_span,
+            body.span,
+            StatementKind::While {
+                condition,
+                body: Box::new(body),
+            },
+        ))
+    }
+
     pub fn parse_expression(&mut self) -> ParseExpressionResult {
         self.parse_assignment()
     }
 
     pub fn parse_assignment(&mut self) -> ParseExpressionResult {
-        let expr = self.parse_equality()?;
+        let expr = self.parse_logic_or()?;
 
         if self.peek_type() == Some(&TokenKind::Equal) {
             self.advance()?;
@@ -258,6 +305,44 @@ impl Parser {
             }
         } else {
             Ok(expr)
+        }
+    }
+
+    pub fn parse_logic_or(&mut self) -> ParseExpressionResult {
+        let left = self.parse_logic_and()?;
+        if self.peek_type() == Some(&TokenKind::Or) {
+            self.advance()?;
+            let right = self.parse_logic_and()?;
+            Ok(Expression::encapsulating(
+                left.span,
+                right.span,
+                ExpressionKind::Logical(Logical {
+                    left: Box::new(left),
+                    operator: ast::LogicalOp::Or,
+                    right: Box::new(right),
+                }),
+            ))
+        } else {
+            Ok(left)
+        }
+    }
+
+    pub fn parse_logic_and(&mut self) -> ParseExpressionResult {
+        let left = self.parse_equality()?;
+        if self.peek_type() == Some(&TokenKind::And) {
+            self.advance()?;
+            let right = self.parse_equality()?;
+            Ok(Expression::encapsulating(
+                left.span,
+                right.span,
+                ExpressionKind::Logical(Logical {
+                    left: Box::new(left),
+                    operator: ast::LogicalOp::And,
+                    right: Box::new(right),
+                }),
+            ))
+        } else {
+            Ok(left)
         }
     }
 

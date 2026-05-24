@@ -8,8 +8,8 @@ use crate::{
     interpreter::{environment::Environment, error::LoxError, gc::Gc, value::Value},
     parser::{
         ast::{
-            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
-            StatementKind, Unary,
+            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, LogicalOp,
+            Statement, StatementKind, Unary,
         },
         diagnostic::Severity,
         parse_str,
@@ -100,6 +100,23 @@ impl Interpreter {
                 self.environment = previous;
                 return result;
             }
+            StatementKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_result = self.evaluate(condition)?;
+                if cond_result.is_truthy() {
+                    self.execute_statement(then_branch)?;
+                } else if let Some(else_stmt) = else_branch {
+                    self.execute_statement(else_stmt)?;
+                }
+            }
+            StatementKind::While { condition, body } => {
+                while self.evaluate(condition)?.is_truthy() {
+                    self.execute_statement(body)?;
+                }
+            }
         }
         Ok(())
     }
@@ -127,6 +144,19 @@ impl Interpreter {
             ExpressionKind::Unary(Unary::Not(inner)) => {
                 let inner_is_truthy = self.evaluate(inner)?.is_truthy();
                 Ok(Value::Boolean(!inner_is_truthy))
+            }
+            ExpressionKind::Logical(logical) => {
+                let left_val = self.evaluate(&logical.left)?;
+                let done = match logical.operator {
+                    LogicalOp::And => !left_val.is_truthy(),
+                    LogicalOp::Or => left_val.is_truthy(),
+                };
+
+                Ok(if done {
+                    left_val
+                } else {
+                    self.evaluate(&logical.right)?
+                })
             }
             ExpressionKind::Binary(binary) => {
                 let left = self.evaluate(&binary.left)?;

@@ -37,7 +37,9 @@ impl Environment {
         if let Some(parent) = &self.parent {
             parent.borrow().get(key)
         } else {
-            Err(LoxError::UndefinedVariable)
+            Err(LoxError::UndefinedVariable {
+                name: key.to_owned(),
+            })
         }
     }
 
@@ -54,7 +56,9 @@ impl Environment {
         if let Some(parent) = &self.parent {
             parent.borrow_mut().assign(key, value)
         } else {
-            Err(LoxError::UndefinedVariable)
+            Err(LoxError::UndefinedVariable {
+                name: key.to_owned(),
+            })
         }
     }
 }
@@ -69,10 +73,17 @@ mod tests {
         let mut env = env_ref.borrow_mut();
 
         // Undefined keys trigger an error
-        assert_eq!(env.get("hello"), Err(LoxError::UndefinedVariable));
+        assert_eq!(
+            env.get("hello"),
+            Err(LoxError::UndefinedVariable {
+                name: "hello".to_owned()
+            })
+        );
         assert_eq!(
             env.assign("hello", Value::Boolean(true)),
-            Err(LoxError::UndefinedVariable)
+            Err(LoxError::UndefinedVariable {
+                name: "hello".to_owned()
+            })
         );
 
         env.define("hello", Value::Nil);

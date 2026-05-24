@@ -17,6 +17,7 @@ pub enum ExpressionKind {
     Binary(Binary),
     Variable(String),
     Assign(String, Box<Expression>),
+    Logical(Logical),
 }
 
 pub type Expression = Spanned<ExpressionKind>;
@@ -26,6 +27,15 @@ pub enum StatementKind {
     Expression(Expression),
     Print(Expression),
     Block(Vec<Declaration>),
+    If {
+        condition: Expression,
+        then_branch: Box<Statement>,
+        else_branch: Option<Box<Statement>>,
+    },
+    While {
+        condition: Expression,
+        body: Box<Statement>,
+    },
 }
 
 pub type Statement = Spanned<StatementKind>;
@@ -102,6 +112,19 @@ impl From<Binary> for Expression {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum LogicalOp {
+    Or,
+    And,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Logical {
+    pub left: Box<Expression>,
+    pub operator: LogicalOp,
+    pub right: Box<Expression>,
+}
+
 #[cfg(test)]
 mod test_conversions {
     use crate::parser::span::Span;
@@ -149,6 +172,11 @@ mod test_conversions {
                     left: Box::new(b.left.strip_spans()),
                     operator: b.operator,
                     right: Box::new(b.right.strip_spans()),
+                }),
+                ExpressionKind::Logical(l) => ExpressionKind::Logical(Logical {
+                    left: Box::new(l.left.strip_spans()),
+                    operator: l.operator,
+                    right: Box::new(l.right.strip_spans()),
                 }),
                 ExpressionKind::Variable(ident) => ExpressionKind::Variable(ident),
                 ExpressionKind::Assign(ident, inner) => {
