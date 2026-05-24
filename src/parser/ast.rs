@@ -1,4 +1,4 @@
-use crate::parser::span::Spanned;
+use crate::parser::span::{Span, Spanned};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -38,6 +38,18 @@ pub enum StatementKind {
     },
 }
 
+impl From<Vec<Declaration>> for Statement {
+    fn from(decls: Vec<Declaration>) -> Statement {
+        Statement {
+            span: Span {
+                start: decls.first().map(|d| d.span.start).unwrap_or(0),
+                end: decls.last().map(|d| d.span.end).unwrap_or(0),
+            },
+            node: StatementKind::Block(decls),
+        }
+    }
+}
+
 pub type Statement = Spanned<StatementKind>;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -50,6 +62,27 @@ pub enum DeclarationKind {
 }
 
 pub type Declaration = Spanned<DeclarationKind>;
+
+impl From<Statement> for Declaration {
+    fn from(stmt: Statement) -> Declaration {
+        Declaration {
+            span: stmt.span,
+            node: DeclarationKind::Statement(stmt),
+        }
+    }
+}
+
+impl From<Expression> for Declaration {
+    fn from(expr: Expression) -> Declaration {
+        Declaration {
+            span: expr.span,
+            node: DeclarationKind::Statement(Statement {
+                span: expr.span,
+                node: StatementKind::Expression(expr),
+            }),
+        }
+    }
+}
 
 impl From<Literal> for ExpressionKind {
     fn from(literal: Literal) -> ExpressionKind {

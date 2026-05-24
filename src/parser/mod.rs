@@ -149,45 +149,51 @@ impl Parser {
 
     pub fn parse_declaration(&mut self) -> ParseDeclarationResult {
         match self.peek_type() {
-            Some(TokenKind::Var) => {
-                let start = self.advance()?.span.start;
+            Some(TokenKind::Var) => self.parse_var_declaration(),
+            _ => self.parse_statement_declaration(),
+        }
+    }
 
-                let (_, identifier) = self.expect_identifier()?;
+    pub fn parse_statement_declaration(&mut self) -> ParseDeclarationResult {
+        self.parse_statement().map(|stmt| Declaration {
+            span: stmt.span,
+            node: DeclarationKind::Statement(stmt),
+        })
+    }
 
-                let next_tok = self.advance()?;
-                match next_tok.node {
-                    TokenKind::Equal => {
-                        let expr = self.parse_expression()?;
-                        let semi = self.expect_token(TokenKind::Semicolon)?;
-                        let end = semi.end;
-                        Ok(Declaration {
-                            span: Span { start, end },
-                            node: DeclarationKind::Var {
-                                identifier,
-                                initial: Some(expr),
-                            },
-                        })
-                    }
-                    TokenKind::Semicolon => {
-                        let end = next_tok.span.end;
-                        Ok(Declaration {
-                            span: Span { start, end },
-                            node: DeclarationKind::Var {
-                                identifier,
-                                initial: None,
-                            },
-                        })
-                    }
-                    _ => Err(Diagnostic::error(
-                        &next_tok,
-                        "expected '=' or ';' when parsing declaration",
-                    )),
-                }
+    pub fn parse_var_declaration(&mut self) -> ParseDeclarationResult {
+        let start = self.expect_token(TokenKind::Var)?.start;
+
+        let (_, identifier) = self.expect_identifier()?;
+
+        let next_tok = self.advance()?;
+        match next_tok.node {
+            TokenKind::Equal => {
+                let expr = self.parse_expression()?;
+                let semi = self.expect_token(TokenKind::Semicolon)?;
+                let end = semi.end;
+                Ok(Declaration {
+                    span: Span { start, end },
+                    node: DeclarationKind::Var {
+                        identifier,
+                        initial: Some(expr),
+                    },
+                })
             }
-            _ => self.parse_statement().map(|stmt| Declaration {
-                span: stmt.span,
-                node: DeclarationKind::Statement(stmt),
-            }),
+            TokenKind::Semicolon => {
+                let end = next_tok.span.end;
+                Ok(Declaration {
+                    span: Span { start, end },
+                    node: DeclarationKind::Var {
+                        identifier,
+                        initial: None,
+                    },
+                })
+            }
+            _ => Err(Diagnostic::error(
+                &next_tok,
+                "expected '=' or ';' when parsing declaration",
+            )),
         }
     }
 
@@ -226,6 +232,7 @@ impl Parser {
             }
             Some(TokenKind::If) => self.parse_if_statement(),
             Some(TokenKind::While) => self.parse_while_statement(),
+            Some(TokenKind::For) => self.parse_for_statement(),
             _ => {
                 let expr = self.parse_expression()?;
                 let expr_span = expr.span;
@@ -282,6 +289,65 @@ impl Parser {
                 body: Box::new(body),
             },
         ))
+    }
+
+    pub fn parse_for_statement(&mut self) -> ParseStatementResult {
+        let for_span = self.expect_token(TokenKind::For)?;
+
+        self.expect_token(TokenKind::LeftParen)?;
+
+        let init = match self.peek_type() {
+            Some(&TokenKind::Semicolon) => {
+                self.advance()?;
+                None
+            }
+            Some(&TokenKind::Var) => Some(self.parse_var_declaration()?),
+            _ => Some(self.parse_statement_declaration()?),
+        };
+
+        let condition = match self.peek_type() {
+            Some(&TokenKind::Semicolon) => {
+                self.advance()?;
+                Expression {
+                    span: self.current_span(),
+                    node: ExpressionKind::Literal(ast::Literal::True),
+                }
+            }
+            _ => {
+                let expr = self.parse_expression()?;
+                self.expect_token(TokenKind::Semicolon)?;
+                expr
+            }
+        };
+
+        let increment = match self.peek_type() {
+            Some(&TokenKind::RightParen) => None,
+            _ => Some(self.parse_expression()?),
+        };
+        self.expect_token(TokenKind::RightParen)?;
+
+        let mut body = self.parse_statement()?;
+
+        if let Some(increment) = increment {
+            body = vec![body.into(), increment.into()].into();
+        }
+
+        let mut block: Vec<Declaration> = vec![];
+        if let Some(decl) = init {
+            block.push(decl);
+        };
+
+        let while_stmt: Statement = Statement::encapsulating(
+            for_span,
+            body.span,
+            StatementKind::While {
+                condition,
+                body: Box::new(body),
+            },
+        );
+        block.push(while_stmt.into());
+
+        Ok(block.into())
     }
 
     pub fn parse_expression(&mut self) -> ParseExpressionResult {
