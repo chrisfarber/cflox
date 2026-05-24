@@ -18,6 +18,7 @@ pub enum ExpressionKind {
     Variable(String),
     Assign(String, Box<Expression>),
     Logical(Logical),
+    Call(Box<Expression>, Vec<Expression>),
 }
 
 pub type Expression = Spanned<ExpressionKind>;
@@ -215,6 +216,10 @@ mod test_conversions {
                 ExpressionKind::Assign(ident, inner) => {
                     ExpressionKind::Assign(ident, Box::new(inner.strip_spans()))
                 }
+                ExpressionKind::Call(callee, args) => ExpressionKind::Call(
+                    Box::new(callee.strip_spans()),
+                    args.into_iter().map(|a| a.strip_spans()).collect(),
+                ),
             };
             Spanned::untracked(node)
         }

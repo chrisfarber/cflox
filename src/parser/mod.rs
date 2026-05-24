@@ -448,7 +448,7 @@ impl Parser {
         let build: fn(Box<Expression>) -> ast::Unary = match self.peek_type() {
             Some(TokenKind::Bang) => ast::Unary::Not,
             Some(TokenKind::Minus) => ast::Unary::Negate,
-            _ => return self.parse_primary(),
+            _ => return self.parse_call(),
         };
         let start = self.advance()?.span.start;
         let inner = self.parse_unary()?;
@@ -457,6 +457,50 @@ impl Parser {
             span: Span { start, end },
             node: ast::ExpressionKind::Unary(build(Box::new(inner))),
         })
+    }
+
+    pub fn parse_call(&mut self) -> ParseExpressionResult {
+        let mut expr = self.parse_primary()?;
+
+        loop {
+            if self.peek_type() == Some(&TokenKind::LeftParen) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expression) -> ParseExpressionResult {
+        self.expect_token(TokenKind::LeftParen)?;
+
+        let mut arguments = vec![];
+        while self.peek_type() != Some(&TokenKind::RightParen) {
+            arguments.push(self.parse_expression()?);
+            if self.peek_type() != Some(&TokenKind::Comma) {
+                break;
+            }
+            self.expect_token(TokenKind::Comma)?;
+        }
+
+        // lox disallows more than 255 arguments due to some aspect of implementing the
+        // bytecode vm
+        if arguments.len() >= 255 {
+            return Err(Diagnostic::error(
+                arguments[255].span,
+                "Can't have more than 255 arguments",
+            ));
+        }
+
+        let end = self.expect_token(TokenKind::RightParen)?;
+
+        Ok(Expression::encapsulating(
+            callee.span,
+            end,
+            ExpressionKind::Call(Box::new(callee), arguments),
+        ))
     }
 
     pub fn parse_primary(&mut self) -> ParseExpressionResult {

@@ -5,7 +5,10 @@ use std::{
 };
 
 use crate::{
-    interpreter::{environment::Environment, error::LoxError, gc::Gc, value::Value},
+    interpreter::{
+        builtins::register_builtins, environment::Environment, error::LoxError, gc::Gc,
+        value::Value,
+    },
     parser::{
         ast::{
             BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, LogicalOp,
@@ -19,6 +22,7 @@ use crate::{
 
 use crate::parser::ast::Literal;
 
+mod builtins;
 mod environment;
 mod error;
 mod gc;
@@ -34,6 +38,7 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let environment = Gc::new(Environment::new());
+        register_builtins(&mut environment.borrow_mut());
         Self {
             environment,
             had_error: false,
@@ -134,6 +139,7 @@ impl Interpreter {
                 self.environment.borrow_mut().assign(ident, value.clone())?;
                 Ok(value)
             }
+            ExpressionKind::Call(callee, args) => self.evaluate_call(callee, args),
             ExpressionKind::Unary(Unary::Negate(inner)) => {
                 if let Value::Number(n) = self.evaluate(inner)? {
                     Ok(Value::Number(-n))
@@ -191,6 +197,33 @@ impl Interpreter {
                     BinaryOp::NotEqual => Ok(Value::Boolean(!left.equals(&right))),
                 }
             }
+        }
+    }
+
+    pub fn evaluate_call(
+        &mut self,
+        callee_expr: &Expression,
+        arg_exprs: &Vec<Expression>,
+    ) -> Result<Value, LoxError> {
+        let callee = self.evaluate(callee_expr)?;
+        let mut args: Vec<Value> = Vec::with_capacity(arg_exprs.len());
+        for arg_expr in arg_exprs {
+            args.push(self.evaluate(arg_expr)?);
+        }
+
+        match callee {
+            Value::BuiltinFn(builtin) => {
+                let arg_count = args.len();
+                if arg_count != builtin.arity {
+                    return Err(LoxError::WrongArity {
+                        expected: builtin.arity,
+                        received: arg_count,
+                    });
+                }
+                let out = (builtin.f)(self, args)?;
+                Ok(out)
+            }
+            _ => Err(LoxError::InvalidFunctionCall),
         }
     }
 

@@ -1,3 +1,5 @@
+var start = clock_ms();
+
 var a = 0;
 var temp;
 
@@ -6,3 +8,8 @@ for (var b = 1; a < 10000; b = temp + b) {
   temp = a;
   a = b;
 }
+
+var end = clock_ms();
+
+print "time spent:";
+print (end - start);

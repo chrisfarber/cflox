@@ -11,4 +11,8 @@ pub enum LoxError {
     InvalidAdd,
     #[error("undefined variable: {name:?}")]
     UndefinedVariable { name: String },
+    #[error("can only call functions and classes")]
+    InvalidFunctionCall,
+    #[error("function expected {expected:?} arguments, received {received:?}")]
+    WrongArity { expected: usize, received: usize },
 }
