@@ -2,7 +2,6 @@ use std::process::exit;
 
 use clap::Parser;
 
-mod gc;
 mod interpreter;
 mod parser;
 

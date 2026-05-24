@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    gc::Gc,
-    interpreter::{error::LoxError, value::Value},
-};
+use crate::interpreter::{error::LoxError, gc::Gc, value::Value};
 
 #[derive(Debug)]
 pub struct Environment {
@@ -22,9 +19,9 @@ impl Environment {
     }
 
     /// Build an environment that inherits from a parent environment
-    pub fn new_with_parent(parent: Gc<Environment>) -> Self {
+    pub fn new_with_parent(parent: &Gc<Environment>) -> Self {
         Self {
-            parent: Some(parent),
+            parent: Some(parent.clone()),
             values: HashMap::new(),
         }
     }
@@ -37,8 +34,8 @@ impl Environment {
             return Ok(get.clone());
         }
 
-        if let Some(parent) = self.parent {
-            parent.get(key)
+        if let Some(parent) = &self.parent {
+            parent.borrow().get(key)
         } else {
             Err(LoxError::UndefinedVariable)
         }
@@ -54,8 +51,8 @@ impl Environment {
             return Ok(());
         }
 
-        if let Some(mut parent) = self.parent {
-            parent.assign(key, value)
+        if let Some(parent) = &self.parent {
+            parent.borrow_mut().assign(key, value)
         } else {
             Err(LoxError::UndefinedVariable)
         }
@@ -64,14 +61,12 @@ impl Environment {
 
 #[cfg(test)]
 mod tests {
-    use crate::gc::Heap;
-
     use super::*;
 
     #[test]
     fn basic_environment_operations() {
-        let mut heap = Heap::new();
-        let mut env = heap.alloc(Environment::new());
+        let env_ref = Gc::new(Environment::new());
+        let mut env = env_ref.borrow_mut();
 
         // Undefined keys trigger an error
         assert_eq!(env.get("hello"), Err(LoxError::UndefinedVariable));
@@ -89,28 +84,27 @@ mod tests {
 
     #[test]
     fn inheriting_from_parent_environments() {
-        let mut heap = Heap::new();
-        let mut a = heap.alloc(Environment::new());
-        a.define("a1", Value::Nil);
+        let a = Gc::new(Environment::new());
+        a.borrow_mut().define("a1", Value::Nil);
 
-        let mut b = heap.alloc(Environment::new_with_parent(a));
-        b.define("b1", Value::Boolean(true));
+        let b = Gc::new(Environment::new_with_parent(&a));
+        b.borrow_mut().define("b1", Value::Boolean(true));
 
-        let mut c = heap.alloc(Environment::new_with_parent(b));
-        c.define("c1", Value::Number(7.0));
+        let c = Gc::new(Environment::new_with_parent(&b));
+        c.borrow_mut().define("c1", Value::Number(7.0));
 
-        assert_eq!(c.get("a1").unwrap(), Value::Nil);
-        assert_eq!(c.get("b1").unwrap(), Value::Boolean(true));
-        assert_eq!(c.get("c1").unwrap(), Value::Number(7.0));
+        assert_eq!(c.borrow().get("a1").unwrap(), Value::Nil);
+        assert_eq!(c.borrow().get("b1").unwrap(), Value::Boolean(true));
+        assert_eq!(c.borrow().get("c1").unwrap(), Value::Number(7.0));
 
         // Definition leaves parent environments unmodified
-        c.define("a1", Value::Boolean(false));
-        assert_eq!(b.get("a1").unwrap(), Value::Nil);
-        assert_eq!(c.get("a1").unwrap(), Value::Boolean(false));
+        c.borrow_mut().define("a1", Value::Boolean(false));
+        assert_eq!(b.borrow().get("a1").unwrap(), Value::Nil);
+        assert_eq!(c.borrow().get("a1").unwrap(), Value::Boolean(false));
 
         // Assignment can impact parent environments, though
-        c.assign("b1", Value::Number(14.0)).unwrap();
-        assert_eq!(b.get("b1").unwrap(), Value::Number(14.0));
-        assert_eq!(c.get("b1").unwrap(), Value::Number(14.0));
+        c.borrow_mut().assign("b1", Value::Number(14.0)).unwrap();
+        assert_eq!(b.borrow().get("b1").unwrap(), Value::Number(14.0));
+        assert_eq!(c.borrow().get("b1").unwrap(), Value::Number(14.0));
     }
 }

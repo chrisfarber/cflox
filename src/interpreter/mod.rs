@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    gc::{Gc, Heap},
-    interpreter::{environment::Environment, error::LoxError, value::Value},
+    interpreter::{environment::Environment, error::LoxError, gc::Gc, value::Value},
     parser::{
         ast::{
             BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Statement,
@@ -22,11 +21,11 @@ use crate::parser::ast::Literal;
 
 mod environment;
 mod error;
+mod gc;
 mod value;
 
 #[derive(Debug)]
 pub struct Interpreter {
-    heap: Heap,
     environment: Gc<Environment>,
     had_error: bool,
     had_runtime_error: bool,
@@ -34,10 +33,8 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        let mut heap = Heap::new();
-        let environment = heap.alloc(Environment::new());
+        let environment = Gc::new(Environment::new());
         Self {
-            heap,
             environment,
             had_error: false,
             had_runtime_error: false,
@@ -66,7 +63,7 @@ impl Interpreter {
                 } else {
                     Value::Nil
                 };
-                self.environment.define(identifier, value);
+                self.environment.borrow_mut().define(identifier, value);
                 Ok(())
             }
         }
@@ -89,9 +86,9 @@ impl Interpreter {
                 self.evaluate(expr)?;
             }
             StatementKind::Block(decls) => {
-                let previous = self.environment;
+                let previous = self.environment.clone();
                 let mut result = Ok(());
-                self.environment = self.heap.alloc(Environment::new_with_parent(previous));
+                self.environment = Gc::new(Environment::new_with_parent(&previous));
 
                 for stmt in decls {
                     result = self.execute_declaration(stmt);
@@ -114,10 +111,10 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
             ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
             ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
-            ExpressionKind::Variable(ident) => self.environment.get(ident),
+            ExpressionKind::Variable(ident) => self.environment.borrow().get(ident),
             ExpressionKind::Assign(ident, inner) => {
                 let value = self.evaluate(inner)?;
-                self.environment.assign(ident, value.clone())?;
+                self.environment.borrow_mut().assign(ident, value.clone())?;
                 Ok(value)
             }
             ExpressionKind::Unary(Unary::Negate(inner)) => {
