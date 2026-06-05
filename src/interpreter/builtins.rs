@@ -21,7 +21,7 @@ pub fn register_builtins(env: &mut Environment) {
     });
 
     register(env, "exit", 1, |_, args| {
-        if let Some(Value::Number(num)) = args.get(0) {
+        if let Some(Value::Number(num)) = args.first() {
             let code = *num as i32;
             exit(code);
         } else {
@@ -37,7 +37,7 @@ fn register(
     f: impl Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static,
 ) {
     env.define(
-        &name,
+        name,
         Value::BuiltinFn(Rc::new(BuiltinFn::new(name.to_owned(), arity, f))),
     );
 }

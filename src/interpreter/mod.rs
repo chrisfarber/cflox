@@ -11,8 +11,8 @@ use crate::{
     },
     parser::{
         ast::{
-            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, LogicalOp,
-            Statement, StatementKind, Unary,
+            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
+            LogicalOp, Statement, StatementKind, Unary,
         },
         diagnostic::Severity,
         parse_str,
@@ -59,6 +59,7 @@ impl Interpreter {
     pub fn execute_declaration(&mut self, decl: &Declaration) -> Result<(), LoxError> {
         match &decl.node {
             DeclarationKind::Statement(stmt) => self.execute_statement(stmt),
+            DeclarationKind::Function(f) => self.execute_fun_declaration(f),
             DeclarationKind::Var {
                 identifier,
                 initial,
@@ -86,6 +87,10 @@ impl Interpreter {
                         println!("{}", other.stringify());
                     }
                 }
+            }
+            StatementKind::Return(expr) => {
+                let val = self.evaluate(expr)?;
+                return Err(LoxError::Return(val));
             }
             StatementKind::Expression(expr) => {
                 self.evaluate(expr)?;
@@ -123,6 +128,17 @@ impl Interpreter {
                 }
             }
         }
+        Ok(())
+    }
+
+    pub fn execute_fun_declaration(&mut self, fun_decl: &Function) -> Result<(), LoxError> {
+        let fn_val = Value::Function(Gc::new(value::Function::new(
+            fun_decl.name.clone(),
+            self.environment.clone(),
+            fun_decl.parameter_names.clone(),
+            fun_decl.body.clone(),
+        )));
+        self.environment.borrow_mut().define(&fun_decl.name, fn_val);
         Ok(())
     }
 
@@ -222,6 +238,35 @@ impl Interpreter {
                 }
                 let out = (builtin.f)(self, args)?;
                 Ok(out)
+            }
+            Value::Function(fun_ref) => {
+                let fun = fun_ref.borrow();
+
+                if args.len() != fun.parameter_names.len() {
+                    return Err(LoxError::WrongArity {
+                        expected: fun.parameter_names.len(),
+                        received: args.len(),
+                    });
+                }
+                let prev_env = self.environment.clone();
+                // self.environment = self.environment.clone();
+                self.environment = Gc::new(Environment::new_with_parent(&fun.environment));
+                let mut env = self.environment.borrow_mut();
+
+                for (name, value) in fun.parameter_names.iter().zip(args) {
+                    env.define(name, value);
+                }
+                drop(env);
+
+                let result = self.execute_statement(&fun.body);
+
+                self.environment = prev_env;
+
+                if let Err(LoxError::Return(return_val)) = result {
+                    Ok(return_val)
+                } else {
+                    result.map(|_| Value::Nil)
+                }
             }
             _ => Err(LoxError::InvalidFunctionCall),
         }

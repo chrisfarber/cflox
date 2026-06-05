@@ -2,8 +2,12 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::interpreter::environment::Environment;
+use crate::interpreter::gc::Gc;
 use crate::interpreter::{Interpreter, error::LoxError};
+use crate::parser::ast::Statement;
 
+static NEXT_FUN_ID: AtomicU64 = AtomicU64::new(0);
 static NEXT_BUILTIN_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +17,7 @@ pub enum Value {
     Number(f64),
     String(String),
     BuiltinFn(Rc<BuiltinFn>),
+    Function(Gc<Function>),
 }
 
 impl Value {
@@ -41,6 +46,7 @@ impl Value {
             (Self::Number(l), Self::Number(r)) => l == r,
             (Self::String(l), Self::String(r)) => l == r,
             (Self::BuiltinFn(l), Self::BuiltinFn(r)) => l == r,
+            (Self::Function(l), Self::Function(r)) => l == r,
             _ => false,
         }
     }
@@ -55,16 +61,19 @@ impl Value {
             // This is laughably bad, I know:
             Self::String(s) => format!("\"{}\"", s),
             Self::BuiltinFn(builtin) => format!("<builtin: {}>", builtin.name),
+            Self::Function(f) => format!("<function: {}>", f.borrow().name),
         }
     }
 }
+
+type BuiltinFnPtr = Rc<dyn Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError>>;
 
 #[derive(Clone)]
 pub struct BuiltinFn {
     id: u64,
     pub arity: usize,
     pub name: String,
-    pub f: Rc<dyn Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError>>,
+    pub f: BuiltinFnPtr,
 }
 
 impl BuiltinFn {
@@ -91,6 +100,50 @@ impl fmt::Debug for BuiltinFn {
 impl PartialEq for BuiltinFn {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
+    }
+}
+
+/// A callable function value for a user defined function.
+pub struct Function {
+    id: u64,
+    pub name: String,
+    pub environment: Gc<Environment>,
+    pub parameter_names: Vec<String>,
+    pub body: Box<Statement>,
+}
+
+impl Function {
+    pub fn new(
+        name: String,
+        environment: Gc<Environment>,
+        parameter_names: Vec<String>,
+        body: Box<Statement>,
+    ) -> Self {
+        Self {
+            id: NEXT_FUN_ID.fetch_add(1, Ordering::Relaxed),
+            name,
+            environment,
+            parameter_names,
+            body,
+        }
+    }
+}
+
+impl fmt::Debug for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<function: {}>", self.name)
+    }
+}
+
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl PartialEq for Gc<Function> {
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow().eq(&other.borrow())
     }
 }
 

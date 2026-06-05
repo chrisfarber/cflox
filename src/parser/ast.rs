@@ -27,6 +27,7 @@ pub type Expression = Spanned<ExpressionKind>;
 pub enum StatementKind {
     Expression(Expression),
     Print(Expression),
+    Return(Expression),
     Block(Vec<Declaration>),
     If {
         condition: Expression,
@@ -60,9 +61,17 @@ pub enum DeclarationKind {
         identifier: String,
         initial: Option<Expression>,
     },
+    Function(Function),
 }
 
 pub type Declaration = Spanned<DeclarationKind>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub name: String,
+    pub parameter_names: Vec<String>,
+    pub body: Box<Statement>,
+}
 
 impl From<Statement> for Declaration {
     fn from(stmt: Statement) -> Declaration {

@@ -1,0 +1,21 @@
+fun ctr() {
+    var n = 0;
+    fun inc() {
+        var r = n;
+        n = n + 1;
+        return r;
+    }
+    return inc;
+}
+
+var n = 40;
+
+var s1 = ctr();
+var s2 = ctr();
+
+print s1();
+print s2();
+print s1();
+print s1();
+print s1();
+print s2();

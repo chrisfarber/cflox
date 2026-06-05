@@ -1,7 +1,7 @@
 use crate::parser::{
     ast::{
-        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Logical,
-        Statement, StatementKind,
+        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
+        Logical, Statement, StatementKind,
     },
     diagnostic::Diagnostic,
     lexing::scan,
@@ -150,6 +150,7 @@ impl Parser {
     pub fn parse_declaration(&mut self) -> ParseDeclarationResult {
         match self.peek_type() {
             Some(TokenKind::Var) => self.parse_var_declaration(),
+            Some(TokenKind::Fun) => self.parse_fun_declaration(),
             _ => self.parse_statement_declaration(),
         }
     }
@@ -159,6 +160,38 @@ impl Parser {
             span: stmt.span,
             node: DeclarationKind::Statement(stmt),
         })
+    }
+
+    pub fn parse_fun_declaration(&mut self) -> ParseDeclarationResult {
+        let fun = self.expect_token(TokenKind::Fun)?;
+
+        let (_, fun_name) = self.expect_identifier()?;
+        let mut parameter_names = vec![];
+
+        self.expect_token(TokenKind::LeftParen)?;
+        while let Some(TokenKind::Identifier(_)) = self.peek_type() {
+            let (_, param_name) = self.expect_identifier()?;
+            parameter_names.push(param_name);
+
+            if self.peek_type() == Some(&TokenKind::Comma) {
+                self.advance()?;
+            } else {
+                break;
+            }
+        }
+        self.expect_token(TokenKind::RightParen)?;
+
+        let body = self.parse_block_statement()?;
+
+        Ok(Declaration::encapsulating(
+            fun,
+            body.span,
+            DeclarationKind::Function(Function {
+                name: fun_name,
+                parameter_names,
+                body: Box::new(body),
+            }),
+        ))
     }
 
     pub fn parse_var_declaration(&mut self) -> ParseDeclarationResult {
@@ -209,27 +242,8 @@ impl Parser {
                     node: StatementKind::Print(expr),
                 })
             }
-            Some(TokenKind::LeftBrace) => {
-                let start = self.advance()?.span.start;
-                let mut decls = Vec::<Declaration>::new();
-                loop {
-                    match self.peek_type() {
-                        Some(TokenKind::RightBrace) | None => {
-                            break;
-                        }
-                        _ => {
-                            decls.push(self.parse_declaration()?);
-                        }
-                    }
-                }
-
-                let semi = self.expect_token(TokenKind::RightBrace)?;
-                let end = semi.end;
-                Ok(Spanned {
-                    span: Span { start, end },
-                    node: StatementKind::Block(decls),
-                })
-            }
+            Some(TokenKind::Return) => self.parse_return_statement(),
+            Some(TokenKind::LeftBrace) => self.parse_block_statement(),
             Some(TokenKind::If) => self.parse_if_statement(),
             Some(TokenKind::While) => self.parse_while_statement(),
             Some(TokenKind::For) => self.parse_for_statement(),
@@ -244,6 +258,39 @@ impl Parser {
                 ))
             }
         }
+    }
+
+    pub fn parse_return_statement(&mut self) -> ParseStatementResult {
+        let start = self.expect_token(TokenKind::Return)?;
+        let expr = self.parse_expression()?;
+        let end = self.expect_token(TokenKind::Semicolon)?;
+        Ok(Statement::encapsulating(
+            start,
+            end,
+            StatementKind::Return(expr),
+        ))
+    }
+
+    pub fn parse_block_statement(&mut self) -> ParseStatementResult {
+        let start = self.expect_token(TokenKind::LeftBrace)?.start;
+        let mut decls = Vec::<Declaration>::new();
+        loop {
+            match self.peek_type() {
+                Some(TokenKind::RightBrace) | None => {
+                    break;
+                }
+                _ => {
+                    decls.push(self.parse_declaration()?);
+                }
+            }
+        }
+
+        let semi = self.expect_token(TokenKind::RightBrace)?;
+        let end = semi.end;
+        Ok(Spanned {
+            span: Span { start, end },
+            node: StatementKind::Block(decls),
+        })
     }
 
     pub fn parse_if_statement(&mut self) -> ParseStatementResult {

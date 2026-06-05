@@ -1,3 +1,5 @@
+use crate::interpreter::value::Value;
+
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum LoxError {
     #[error("can only negate numbers")]
@@ -15,4 +17,6 @@ pub enum LoxError {
     InvalidFunctionCall,
     #[error("function expected {expected:?} arguments, received {received:?}")]
     WrongArity { expected: usize, received: usize },
+    #[error("return")]
+    Return(Value),
 }
