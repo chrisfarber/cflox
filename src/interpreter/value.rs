@@ -51,17 +51,26 @@ impl Value {
         }
     }
 
-    /// Build a representation of the value in lox's own syntax.
-    pub fn stringify(&self) -> String {
+    /// The user-facing display form of a value, as `print` renders it.
+    /// Strings are shown verbatim, without surrounding quotes.
+    pub fn display(&self) -> String {
         match self {
             Self::Nil => "nil".into(),
             Self::Boolean(true) => "true".into(),
             Self::Boolean(false) => "false".into(),
             Self::Number(n) => n.to_string(),
-            // This is laughably bad, I know:
-            Self::String(s) => format!("\"{}\"", s),
+            Self::String(s) => s.clone(),
             Self::BuiltinFn(builtin) => format!("<builtin: {}>", builtin.name),
             Self::Function(f) => format!("<function: {}>", f.borrow().name),
+        }
+    }
+
+    /// A debugging representation of a value, used to echo results in the
+    /// REPL. Strings are quoted so they can be told apart from other values.
+    pub fn repr(&self) -> String {
+        match self {
+            Self::String(s) => format!("\"{}\"", s),
+            other => other.display(),
         }
     }
 }

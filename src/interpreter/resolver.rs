@@ -230,6 +230,7 @@ impl<'a> Resolver<'a> {
         for (distance, scope) in self.scopes.iter().rev().enumerate() {
             if scope.contains_key(name) {
                 self.mapping.set(expr, distance as u32);
+                return;
             }
         }
     }
@@ -239,4 +240,53 @@ pub fn resolve(resolutions: &mut Resolutions, program: &[Declaration]) -> Vec<Di
     let mut resolver = Resolver::new(resolutions);
     resolver.resolve(program);
     resolver.diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{diagnostic::has_error, parse_str};
+
+    /// Walk into a single-statement block and return the declarations it holds.
+    fn block_decls(decl: &Declaration) -> &[Declaration] {
+        let DeclarationKind::Statement(stmt) = &decl.node else {
+            panic!("expected a statement declaration");
+        };
+        let StatementKind::Block(decls) = &stmt.node else {
+            panic!("expected a block statement");
+        };
+        decls
+    }
+
+    /// Pull the variable expression out of a `print <var>;` declaration.
+    fn print_variable(decl: &Declaration) -> &Expression {
+        let DeclarationKind::Statement(stmt) = &decl.node else {
+            panic!("expected a statement declaration");
+        };
+        let StatementKind::Print(expr) = &stmt.node else {
+            panic!("expected a print statement");
+        };
+        expr
+    }
+
+    #[test]
+    fn shadowed_variable_resolves_to_nearest_scope() {
+        // The inner `print a` must resolve to the inner `a` (distance 0),
+        // not the outer one.
+        let source = "{ var a = \"outer\"; { var a = \"inner\"; print a; } }";
+        let (decls, diags) = parse_str(source);
+        assert!(!has_error(&diags), "{diags:?}");
+
+        let mut resolutions = Resolutions::new();
+        let res_diags = resolve(&mut resolutions, &decls);
+        assert!(res_diags.is_empty(), "{res_diags:?}");
+
+        // decls[0] is the outer block; its second decl is the inner block;
+        // the inner block's second decl is `print a`.
+        let outer = block_decls(&decls[0]);
+        let inner = block_decls(&outer[1]);
+        let var_expr = print_variable(&inner[1]);
+
+        assert_eq!(resolutions.resolve(var_expr), Some(0));
+    }
 }

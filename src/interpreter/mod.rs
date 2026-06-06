@@ -88,14 +88,7 @@ impl Interpreter {
         match &stmt.node {
             StatementKind::Print(expr) => {
                 let val = self.evaluate(expr)?;
-                match val {
-                    Value::String(str) => {
-                        println!("{}", str);
-                    }
-                    other => {
-                        println!("{}", other.stringify());
-                    }
-                }
+                println!("{}", val.display());
             }
             StatementKind::Return(expr) => {
                 let val = if let Some(expr) = expr {
@@ -316,7 +309,7 @@ impl Interpreter {
                     if n == 0 {
                         break;
                     }
-                    self.run(&input);
+                    self.run(&input, true);
                     input.clear();
                 }
                 Err(_) => {
@@ -329,17 +322,21 @@ impl Interpreter {
     /// Run a file
     pub fn run_file<T: AsRef<Path>>(&mut self, file_path: T) -> Result<(), ()> {
         let contents = read_to_string(file_path).map_err(|_| ())?;
-        self.run(&contents);
+        self.run(&contents, false);
         Ok(())
     }
 
-    pub fn run(&mut self, source: &str) {
+    /// Parse, resolve, and execute `source`.
+    ///
+    /// When `repl` is true, the result of each top-level expression statement
+    /// is echoed back, the way an interactive prompt would.
+    pub fn run(&mut self, source: &str, repl: bool) {
         let (decls, diags) = parse_str(source);
         if has_error(&diags) {
             for diag in diags {
                 eprintln!("parse error: {:#?}", diag);
             }
-            eprintln!("parsed AST: {:#?}", decls);
+            self.had_error = true;
             return;
         }
         let resolution_diags = resolve(&mut self.resolutions, &decls);
@@ -347,24 +344,21 @@ impl Interpreter {
             for diag in resolution_diags {
                 eprintln!("resolution error: {:#?}", diag);
             }
-            eprintln!("parsed AST: {:#?}", decls);
+            self.had_error = true;
             return;
         }
         for decl in decls {
             if let DeclarationKind::Statement(Node {
                 node: StatementKind::Expression(expr),
                 ..
-            }) = decl.node
+            }) = &decl.node
+                && repl
             {
-                // Here we are in a special case: the declaration is actually a
-                // statement containing an expression.
-                //
-                // We want to print the result of the expression, so, we bypass
-                // `execute_declaration()` and call `evaluate()` directly.
-                let res = self.evaluate(&expr);
-                match res {
+                // In the REPL we echo the value of a bare expression statement,
+                // so we bypass `execute_declaration()` and evaluate directly.
+                match self.evaluate(expr) {
                     Ok(val) => {
-                        println!("{}", val.stringify());
+                        println!("{}", val.repr());
                     }
                     Err(e) => {
                         self.had_runtime_error = true;
@@ -372,22 +366,11 @@ impl Interpreter {
                         break;
                     }
                 }
-            } else {
-                if let Err(err) = self.execute_declaration(&decl) {
-                    self.had_runtime_error = true;
-                    eprintln!("Runtime error: {}", err);
-                    break;
-                }
+            } else if let Err(err) = self.execute_declaration(&decl) {
+                self.had_runtime_error = true;
+                eprintln!("Runtime error: {}", err);
+                break;
             }
         }
     }
-
-    // pub fn error(&mut self, line: usize, message: &String) {
-    //     self.report(line, &"".to_owned(), message);
-    // }
-
-    // pub fn report(&mut self, line: usize, where_at: &String, message: &String) {
-    //     eprintln!("[line {}] Error {}: {}", line, where_at, message);
-    //     self.had_error = true;
-    // }
 }
