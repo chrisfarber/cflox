@@ -27,7 +27,7 @@ pub type Expression = Node<ExpressionKind>;
 pub enum StatementKind {
     Expression(Expression),
     Print(Expression),
-    Return(Expression),
+    Return(Option<Expression>),
     Block(Vec<Declaration>),
     If {
         condition: Expression,

@@ -258,7 +258,11 @@ impl Parser {
 
     pub fn parse_return_statement(&mut self) -> ParseStatementResult {
         let start = self.expect_token(TokenKind::Return)?;
-        let expr = self.parse_expression()?;
+        let expr = if self.peek_type() != Some(&TokenKind::Semicolon) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
         let end = self.expect_token(TokenKind::Semicolon)?;
         Ok(Statement::encapsulating(
             start,

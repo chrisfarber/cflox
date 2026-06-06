@@ -98,7 +98,11 @@ impl Interpreter {
                 }
             }
             StatementKind::Return(expr) => {
-                let val = self.evaluate(expr)?;
+                let val = if let Some(expr) = expr {
+                    self.evaluate(expr)?
+                } else {
+                    Value::Nil
+                };
                 return Err(LoxError::Return(val));
             }
             StatementKind::Expression(expr) => {

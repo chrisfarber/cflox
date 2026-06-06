@@ -95,7 +95,9 @@ impl<'a> Resolver<'a> {
                     self.diagnostics
                         .push(Diagnostic::error(stmt, "Can't return from top-level code."))
                 }
-                self.resolve_expression(expr)
+                if let Some(expr) = expr {
+                    self.resolve_expression(expr);
+                }
             }
             StatementKind::While { condition, body } => {
                 self.resolve_expression(condition);
