@@ -10,13 +10,8 @@ use crate::parser::{
 };
 
 #[derive(Debug)]
-pub struct Resolution {
-    depth: Option<u32>,
-}
-
-#[derive(Debug)]
 pub struct Resolutions {
-    map: HashMap<NodeId, Resolution>,
+    map: HashMap<NodeId, u32>,
 }
 
 impl Resolutions {
@@ -27,16 +22,11 @@ impl Resolutions {
     }
 
     pub fn resolve<T>(&self, node: &Node<T>) -> Option<u32> {
-        self.map.get(&node.id()).and_then(|r| r.depth)
+        self.map.get(&node.id()).copied()
     }
 
     fn set<T>(&mut self, node: &Node<T>, distance: u32) {
-        self.map.insert(
-            node.id(),
-            Resolution {
-                depth: Some(distance),
-            },
-        );
+        self.map.insert(node.id(), distance);
     }
 }
 

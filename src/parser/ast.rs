@@ -117,7 +117,7 @@ impl From<Unary> for ExpressionKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinaryOp {
     Divide,
     Multiply,

@@ -212,32 +212,31 @@ impl Interpreter {
                 let right = self.evaluate(&binary.right)?;
 
                 match binary.operator {
-                    BinaryOp::Subtract => {
-                        Ok(Value::Number(left.get_number()? - right.get_number()?))
-                    }
-                    BinaryOp::Divide => Ok(Value::Number(left.get_number()? / right.get_number()?)),
-                    BinaryOp::Multiply => {
-                        Ok(Value::Number(left.get_number()? * right.get_number()?))
-                    }
-                    BinaryOp::Greater => {
-                        Ok(Value::Boolean(left.get_number()? > right.get_number()?))
-                    }
-                    BinaryOp::GreaterEqual => {
-                        Ok(Value::Boolean(left.get_number()? >= right.get_number()?))
-                    }
-                    BinaryOp::Less => Ok(Value::Boolean(left.get_number()? < right.get_number()?)),
-                    BinaryOp::LessEqual => {
-                        Ok(Value::Boolean(left.get_number()? <= right.get_number()?))
-                    }
+                    // `+` is overloaded for numbers and strings; equality works
+                    // across all value types. The rest are numeric-only.
                     BinaryOp::Add => match (left, right) {
-                        (Value::Number(left_num), Value::Number(right_num)) => {
-                            Ok(Value::Number(left_num + right_num))
-                        }
-                        (Value::String(sl), Value::String(sr)) => Ok(Value::String(sl + &sr)),
+                        (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
+                        (Value::String(l), Value::String(r)) => Ok(Value::String(l + &r)),
                         _ => Err(LoxError::InvalidAdd),
                     },
                     BinaryOp::Equal => Ok(Value::Boolean(left.equals(&right))),
                     BinaryOp::NotEqual => Ok(Value::Boolean(!left.equals(&right))),
+                    op => {
+                        let l = left.get_number()?;
+                        let r = right.get_number()?;
+                        Ok(match op {
+                            BinaryOp::Subtract => Value::Number(l - r),
+                            BinaryOp::Divide => Value::Number(l / r),
+                            BinaryOp::Multiply => Value::Number(l * r),
+                            BinaryOp::Greater => Value::Boolean(l > r),
+                            BinaryOp::GreaterEqual => Value::Boolean(l >= r),
+                            BinaryOp::Less => Value::Boolean(l < r),
+                            BinaryOp::LessEqual => Value::Boolean(l <= r),
+                            BinaryOp::Add | BinaryOp::Equal | BinaryOp::NotEqual => {
+                                unreachable!("handled above")
+                            }
+                        })
+                    }
                 }
             }
         }
@@ -246,7 +245,7 @@ impl Interpreter {
     pub fn evaluate_call(
         &mut self,
         callee_expr: &Expression,
-        arg_exprs: &Vec<Expression>,
+        arg_exprs: &[Expression],
     ) -> Result<Value, LoxError> {
         let callee = self.evaluate(callee_expr)?;
         let mut args: Vec<Value> = Vec::with_capacity(arg_exprs.len());

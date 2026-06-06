@@ -59,17 +59,12 @@ impl Environment {
         }))
     }
 
-    /// Build an environment that inherits from a parent environment
-    pub fn new_with_parent(parent: &Environment) -> Self {
-        Self(Gc::new(InnerEnvironment {
-            parent: Some(parent.clone()),
-            values: HashMap::new(),
-        }))
-    }
-
     /// Create a new environment with this environment as its parent
     pub fn child(&self) -> Self {
-        Self::new_with_parent(self)
+        Self(Gc::new(InnerEnvironment {
+            parent: Some(self.clone()),
+            values: HashMap::new(),
+        }))
     }
 
     pub fn get(&self, key: &str) -> Result<Value, LoxError> {
