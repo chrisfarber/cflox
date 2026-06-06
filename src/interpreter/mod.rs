@@ -6,7 +6,11 @@ use std::{
 
 use crate::{
     interpreter::{
-        builtins::register_builtins, environment::Environment, error::LoxError, gc::Gc,
+        builtins::register_builtins,
+        environment::Environment,
+        error::LoxError,
+        gc::Gc,
+        resolver::{Resolutions, resolve},
         value::Value,
     },
     parser::{
@@ -14,7 +18,7 @@ use crate::{
             BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
             LogicalOp, Statement, StatementKind, Unary,
         },
-        diagnostic::Severity,
+        diagnostic::has_error,
         node::Node,
         parse_str,
     },
@@ -26,23 +30,28 @@ mod builtins;
 mod environment;
 mod error;
 mod gc;
+mod resolver;
 mod value;
 
 #[derive(Debug)]
 pub struct Interpreter {
-    environment: Gc<Environment>,
+    globals: Environment,
+    environment: Environment,
     had_error: bool,
     had_runtime_error: bool,
+    resolutions: Resolutions,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        let environment = Gc::new(Environment::new());
-        register_builtins(&mut environment.borrow_mut());
+        let globals = Environment::new();
+        register_builtins(&globals);
         Self {
-            environment,
+            environment: globals.clone(),
+            globals,
             had_error: false,
             had_runtime_error: false,
+            resolutions: Resolutions::new(),
         }
     }
 
@@ -69,7 +78,7 @@ impl Interpreter {
                 } else {
                     Value::Nil
                 };
-                self.environment.borrow_mut().define(identifier, value);
+                self.environment.define(identifier, value);
                 Ok(())
             }
         }
@@ -96,19 +105,8 @@ impl Interpreter {
                 self.evaluate(expr)?;
             }
             StatementKind::Block(decls) => {
-                let previous = self.environment.clone();
-                let mut result = Ok(());
-                self.environment = Gc::new(Environment::new_with_parent(&previous));
-
-                for stmt in decls {
-                    result = self.execute_declaration(stmt);
-                    if result.is_err() {
-                        break;
-                    }
-                }
-
-                self.environment = previous;
-                return result;
+                let env = self.environment.child();
+                return self.execute_block(decls, env);
             }
             StatementKind::If {
                 condition,
@@ -131,14 +129,36 @@ impl Interpreter {
         Ok(())
     }
 
+    pub fn execute_block(
+        &mut self,
+        decls: &[Declaration],
+        env: Environment,
+    ) -> Result<(), LoxError> {
+        let prev = std::mem::replace(&mut self.environment, env);
+        let mut result = Ok(());
+        for decl in decls {
+            result = self.execute_declaration(decl);
+            if result.is_err() {
+                break;
+            }
+        }
+
+        self.environment = prev;
+        result
+    }
+
     pub fn execute_fun_declaration(&mut self, fun_decl: &Function) -> Result<(), LoxError> {
         let fn_val = Value::Function(Gc::new(value::Function::new(
             fun_decl.name.clone(),
             self.environment.clone(),
-            fun_decl.parameter_names.clone(),
+            fun_decl
+                .parameter_names
+                .iter()
+                .map(|(_, name)| name.to_owned())
+                .collect(),
             fun_decl.body.clone(),
         )));
-        self.environment.borrow_mut().define(&fun_decl.name, fn_val);
+        self.environment.define(&fun_decl.name, fn_val);
         Ok(())
     }
 
@@ -149,10 +169,20 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
             ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
             ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
-            ExpressionKind::Variable(ident) => self.environment.borrow().get(ident),
+            ExpressionKind::Variable(ident) => {
+                if let Some(distance) = self.resolutions.resolve(expr) {
+                    self.environment.get_at(distance, ident)
+                } else {
+                    self.globals.get(ident)
+                }
+            }
             ExpressionKind::Assign(ident, inner) => {
                 let value = self.evaluate(inner)?;
-                self.environment.borrow_mut().assign(ident, value.clone())?;
+                if let Some(distance) = self.resolutions.resolve(expr) {
+                    self.environment.assign_at(distance, ident, value.clone())?;
+                } else {
+                    self.globals.assign(ident, value.clone())?;
+                }
                 Ok(value)
             }
             ExpressionKind::Call(callee, args) => self.evaluate_call(callee, args),
@@ -248,19 +278,15 @@ impl Interpreter {
                         received: args.len(),
                     });
                 }
-                let prev_env = self.environment.clone();
-                // self.environment = self.environment.clone();
-                self.environment = Gc::new(Environment::new_with_parent(&fun.environment));
-                let mut env = self.environment.borrow_mut();
-
+                let fun_env = fun.environment.child();
                 for (name, value) in fun.parameter_names.iter().zip(args) {
-                    env.define(name, value);
+                    fun_env.define(name, value);
                 }
-                drop(env);
 
-                let result = self.execute_statement(&fun.body);
-
-                self.environment = prev_env;
+                let StatementKind::Block(decls) = &fun.body.node else {
+                    unreachable!("function bodies are always blocks");
+                };
+                let result = self.execute_block(decls, fun_env);
 
                 if let Err(LoxError::Return(return_val)) = result {
                     Ok(return_val)
@@ -305,40 +331,48 @@ impl Interpreter {
 
     pub fn run(&mut self, source: &str) {
         let (decls, diags) = parse_str(source);
-        if diags.iter().any(|d| d.severity == Severity::Error) {
+        if has_error(&diags) {
             for diag in diags {
                 eprintln!("parse error: {:#?}", diag);
             }
             eprintln!("parsed AST: {:#?}", decls);
-        } else {
-            for decl in decls {
-                if let DeclarationKind::Statement(Node {
-                    node: StatementKind::Expression(expr),
-                    ..
-                }) = decl.node
-                {
-                    // Here we are in a special case: the declaration is actually a
-                    // statement containing an expression.
-                    //
-                    // We want to print the result of the expression, so, we bypass
-                    // `execute_declaration()` and call `evaluate()` directly.
-                    let res = self.evaluate(&expr);
-                    match res {
-                        Ok(val) => {
-                            println!("{}", val.stringify());
-                        }
-                        Err(e) => {
-                            self.had_runtime_error = true;
-                            eprintln!("Runtime error: {}", e);
-                            break;
-                        }
+            return;
+        }
+        let resolution_diags = resolve(&mut self.resolutions, &decls);
+        if has_error(&resolution_diags) {
+            for diag in resolution_diags {
+                eprintln!("resolution error: {:#?}", diag);
+            }
+            eprintln!("parsed AST: {:#?}", decls);
+            return;
+        }
+        for decl in decls {
+            if let DeclarationKind::Statement(Node {
+                node: StatementKind::Expression(expr),
+                ..
+            }) = decl.node
+            {
+                // Here we are in a special case: the declaration is actually a
+                // statement containing an expression.
+                //
+                // We want to print the result of the expression, so, we bypass
+                // `execute_declaration()` and call `evaluate()` directly.
+                let res = self.evaluate(&expr);
+                match res {
+                    Ok(val) => {
+                        println!("{}", val.stringify());
                     }
-                } else {
-                    if let Err(err) = self.execute_declaration(&decl) {
+                    Err(e) => {
                         self.had_runtime_error = true;
-                        eprintln!("Runtime error: {}", err);
+                        eprintln!("Runtime error: {}", e);
                         break;
                     }
+                }
+            } else {
+                if let Err(err) = self.execute_declaration(&decl) {
+                    self.had_runtime_error = true;
+                    eprintln!("Runtime error: {}", err);
+                    break;
                 }
             }
         }

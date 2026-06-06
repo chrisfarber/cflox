@@ -107,7 +107,7 @@ impl PartialEq for BuiltinFn {
 pub struct Function {
     id: u64,
     pub name: String,
-    pub environment: Gc<Environment>,
+    pub environment: Environment,
     pub parameter_names: Vec<String>,
     pub body: Box<Statement>,
 }
@@ -115,7 +115,7 @@ pub struct Function {
 impl Function {
     pub fn new(
         name: String,
-        environment: Gc<Environment>,
+        environment: Environment,
         parameter_names: Vec<String>,
         body: Box<Statement>,
     ) -> Self {

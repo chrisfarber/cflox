@@ -9,7 +9,7 @@ use crate::interpreter::{
     value::{BuiltinFn, Value},
 };
 
-pub fn register_builtins(env: &mut Environment) {
+pub fn register_builtins(env: &Environment) {
     let start = Instant::now();
 
     register(env, "clock", 0, move |_, _| {
@@ -31,7 +31,7 @@ pub fn register_builtins(env: &mut Environment) {
 }
 
 fn register(
-    env: &mut Environment,
+    env: &Environment,
     name: &str,
     arity: usize,
     f: impl Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static,

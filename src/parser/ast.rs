@@ -69,7 +69,8 @@ pub type Declaration = Node<DeclarationKind>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub parameter_names: Vec<String>,
+    pub name_span: Span,
+    pub parameter_names: Vec<(Span, String)>,
     pub body: Box<Statement>,
 }
 

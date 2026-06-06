@@ -27,3 +27,7 @@ impl Diagnostic {
         }
     }
 }
+
+pub fn has_error(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(|d| d.severity == Severity::Error)
+}

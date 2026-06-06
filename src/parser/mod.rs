@@ -163,13 +163,13 @@ impl Parser {
     pub fn parse_fun_declaration(&mut self) -> ParseDeclarationResult {
         let fun = self.expect_token(TokenKind::Fun)?;
 
-        let (_, fun_name) = self.expect_identifier()?;
+        let (fun_name_span, fun_name) = self.expect_identifier()?;
         let mut parameter_names = vec![];
 
         self.expect_token(TokenKind::LeftParen)?;
         while let Some(TokenKind::Identifier(_)) = self.peek_type() {
-            let (_, param_name) = self.expect_identifier()?;
-            parameter_names.push(param_name);
+            let (param_span, param_name) = self.expect_identifier()?;
+            parameter_names.push((param_span, param_name));
 
             if self.peek_type() == Some(&TokenKind::Comma) {
                 self.advance()?;
@@ -185,6 +185,7 @@ impl Parser {
             fun,
             body.span,
             DeclarationKind::Function(Function {
+                name_span: fun_name_span,
                 name: fun_name,
                 parameter_names,
                 body: Box::new(body),

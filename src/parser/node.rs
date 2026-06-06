@@ -17,6 +17,15 @@ impl Span {
     }
 }
 
+impl From<usize> for Span {
+    fn from(size: usize) -> Span {
+        Span {
+            start: size,
+            end: size,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {
     pub span: Span,
