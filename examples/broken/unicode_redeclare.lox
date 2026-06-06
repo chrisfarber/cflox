@@ -1,0 +1,9 @@
+// Bonus span torture-test: non-ASCII identifiers and string contents.
+// `café` is declared twice in the same scope. Both the preceding lines and
+// the offending line contain multi-byte characters, so if any span is
+// tracked in bytes instead of chars the caret will drift off target.
+fun relâcher(naïve) {
+  var café = "résumé";
+  var café = "naïveté";
+  print café;
+}

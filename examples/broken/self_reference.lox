@@ -1,0 +1,10 @@
+// `shadow` tries to initialize itself from itself. The resolver should
+// point the caret at the *use* on the right-hand side, several lines and
+// scopes deep.
+{
+  var shadow = "outer";
+  {
+    var shadow = shadow;
+    print shadow;
+  }
+}

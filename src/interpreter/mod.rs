@@ -1,6 +1,6 @@
 use std::{
     fs::read_to_string,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::Path,
 };
 
@@ -330,18 +330,19 @@ impl Interpreter {
     /// When `repl` is true, the result of each top-level expression statement
     /// is echoed back, the way an interactive prompt would.
     pub fn run(&mut self, source: &str, repl: bool) {
+        let color = io::stderr().is_terminal();
         let (decls, diags) = parse_str(source);
         if has_error(&diags) {
-            for diag in diags {
-                eprintln!("parse error: {:#?}", diag);
+            for diag in &diags {
+                eprintln!("{}\n", diag.render(source, color));
             }
             self.had_error = true;
             return;
         }
         let resolution_diags = resolve(&mut self.resolutions, &decls);
         if has_error(&resolution_diags) {
-            for diag in resolution_diags {
-                eprintln!("resolution error: {:#?}", diag);
+            for diag in &resolution_diags {
+                eprintln!("{}\n", diag.render(source, color));
             }
             self.had_error = true;
             return;

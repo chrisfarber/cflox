@@ -1,0 +1,5 @@
+// The string on the next line never closes, so the lexer should point at
+// it and complain. The span runs to end-of-input, which tests that the
+// renderer clamps the underline to a single line.
+var greeting = "hello world;
+print greeting;

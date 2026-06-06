@@ -1,0 +1,5 @@
+// A binary `+` with nothing on its right. The unicode string to the left
+// pushes the byte offset past the char offset, so the caret placement
+// proves whether columns are counted in chars or bytes.
+var label = "naïve";
+print label + ;

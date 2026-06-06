@@ -1,0 +1,5 @@
+// You can't return when you're not inside a function. The caret should
+// land on the offending `return` statement on line 4.
+print "starting up";
+var ready = true;
+return ready;
