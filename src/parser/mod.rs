@@ -5,14 +5,14 @@ use crate::parser::{
     },
     diagnostic::Diagnostic,
     lexing::scan,
-    span::{Span, Spanned},
+    node::{Node, Span},
     token::{Token, TokenKind},
 };
 
 pub mod ast;
 pub mod diagnostic;
 pub mod lexing;
-pub mod span;
+pub mod node;
 pub mod token;
 
 struct Parser {
@@ -156,10 +156,8 @@ impl Parser {
     }
 
     pub fn parse_statement_declaration(&mut self) -> ParseDeclarationResult {
-        self.parse_statement().map(|stmt| Declaration {
-            span: stmt.span,
-            node: DeclarationKind::Statement(stmt),
-        })
+        self.parse_statement()
+            .map(|stmt| Declaration::new(stmt.span, DeclarationKind::Statement(stmt)))
     }
 
     pub fn parse_fun_declaration(&mut self) -> ParseDeclarationResult {
@@ -205,23 +203,23 @@ impl Parser {
                 let expr = self.parse_expression()?;
                 let semi = self.expect_token(TokenKind::Semicolon)?;
                 let end = semi.end;
-                Ok(Declaration {
-                    span: Span { start, end },
-                    node: DeclarationKind::Var {
+                Ok(Declaration::new(
+                    Span { start, end },
+                    DeclarationKind::Var {
                         identifier,
                         initial: Some(expr),
                     },
-                })
+                ))
             }
             TokenKind::Semicolon => {
                 let end = next_tok.span.end;
-                Ok(Declaration {
-                    span: Span { start, end },
-                    node: DeclarationKind::Var {
+                Ok(Declaration::new(
+                    Span { start, end },
+                    DeclarationKind::Var {
                         identifier,
                         initial: None,
                     },
-                })
+                ))
             }
             _ => Err(Diagnostic::error(
                 &next_tok,
@@ -237,10 +235,7 @@ impl Parser {
                 let expr = self.parse_expression()?;
                 let semi = self.expect_token(TokenKind::Semicolon)?;
                 let end = semi.end;
-                Ok(Spanned {
-                    span: Span { start, end },
-                    node: StatementKind::Print(expr),
-                })
+                Ok(Node::new(Span { start, end }, StatementKind::Print(expr)))
             }
             Some(TokenKind::Return) => self.parse_return_statement(),
             Some(TokenKind::LeftBrace) => self.parse_block_statement(),
@@ -287,10 +282,7 @@ impl Parser {
 
         let semi = self.expect_token(TokenKind::RightBrace)?;
         let end = semi.end;
-        Ok(Spanned {
-            span: Span { start, end },
-            node: StatementKind::Block(decls),
-        })
+        Ok(Node::new(Span { start, end }, StatementKind::Block(decls)))
     }
 
     pub fn parse_if_statement(&mut self) -> ParseStatementResult {
@@ -311,14 +303,14 @@ impl Parser {
             else_branch = Some(Box::new(else_stmt));
         }
 
-        Ok(Statement {
-            span: Span { start, end },
-            node: StatementKind::If {
+        Ok(Statement::new(
+            Span { start, end },
+            StatementKind::If {
                 condition,
                 then_branch,
                 else_branch,
             },
-        })
+        ))
     }
 
     pub fn parse_while_statement(&mut self) -> ParseStatementResult {
@@ -355,10 +347,10 @@ impl Parser {
         let condition = match self.peek_type() {
             Some(&TokenKind::Semicolon) => {
                 self.advance()?;
-                Expression {
-                    span: self.current_span(),
-                    node: ExpressionKind::Literal(ast::Literal::True),
-                }
+                Expression::new(
+                    self.current_span(),
+                    ExpressionKind::Literal(ast::Literal::True),
+                )
             }
             _ => {
                 let expr = self.parse_expression()?;
@@ -500,10 +492,10 @@ impl Parser {
         let start = self.advance()?.span.start;
         let inner = self.parse_unary()?;
         let end = inner.span.end;
-        Ok(Expression {
-            span: Span { start, end },
-            node: ast::ExpressionKind::Unary(build(Box::new(inner))),
-        })
+        Ok(Expression::new(
+            Span { start, end },
+            ast::ExpressionKind::Unary(build(Box::new(inner))),
+        ))
     }
 
     pub fn parse_call(&mut self) -> ParseExpressionResult {
@@ -552,12 +544,7 @@ impl Parser {
 
     pub fn parse_primary(&mut self) -> ParseExpressionResult {
         let next = self.advance()?;
-        let wrap = |node: ast::ExpressionKind| {
-            Ok(Expression {
-                span: next.span,
-                node,
-            })
-        };
+        let wrap = |node: ast::ExpressionKind| Ok(Expression::new(next.span, node));
         match next.node {
             TokenKind::True => wrap(true.into()),
             TokenKind::False => wrap(false.into()),

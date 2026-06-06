@@ -1,4 +1,4 @@
-use crate::parser::span::Span;
+use crate::parser::node::Span;
 
 /// How severe is a diagnostic?
 #[allow(dead_code)]

@@ -1,4 +1,4 @@
-use crate::parser::span::Spanned;
+use crate::parser::node::Spanned;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {

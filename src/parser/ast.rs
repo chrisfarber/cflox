@@ -1,4 +1,4 @@
-use crate::parser::span::{Span, Spanned};
+use crate::parser::node::{Node, Span};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -21,7 +21,7 @@ pub enum ExpressionKind {
     Call(Box<Expression>, Vec<Expression>),
 }
 
-pub type Expression = Spanned<ExpressionKind>;
+pub type Expression = Node<ExpressionKind>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
@@ -42,17 +42,17 @@ pub enum StatementKind {
 
 impl From<Vec<Declaration>> for Statement {
     fn from(decls: Vec<Declaration>) -> Statement {
-        Statement {
-            span: Span {
+        Statement::new(
+            Span {
                 start: decls.first().map(|d| d.span.start).unwrap_or(0),
                 end: decls.last().map(|d| d.span.end).unwrap_or(0),
             },
-            node: StatementKind::Block(decls),
-        }
+            StatementKind::Block(decls),
+        )
     }
 }
 
-pub type Statement = Spanned<StatementKind>;
+pub type Statement = Node<StatementKind>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeclarationKind {
@@ -64,7 +64,7 @@ pub enum DeclarationKind {
     Function(Function),
 }
 
-pub type Declaration = Spanned<DeclarationKind>;
+pub type Declaration = Node<DeclarationKind>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
@@ -75,22 +75,16 @@ pub struct Function {
 
 impl From<Statement> for Declaration {
     fn from(stmt: Statement) -> Declaration {
-        Declaration {
-            span: stmt.span,
-            node: DeclarationKind::Statement(stmt),
-        }
+        Declaration::new(stmt.span, DeclarationKind::Statement(stmt))
     }
 }
 
 impl From<Expression> for Declaration {
     fn from(expr: Expression) -> Declaration {
-        Declaration {
-            span: expr.span,
-            node: DeclarationKind::Statement(Statement {
-                span: expr.span,
-                node: StatementKind::Expression(expr),
-            }),
-        }
+        Declaration::new(
+            expr.span,
+            DeclarationKind::Statement(Statement::new(expr.span, StatementKind::Expression(expr))),
+        )
     }
 }
 
@@ -170,7 +164,6 @@ pub struct Logical {
 
 #[cfg(test)]
 mod test_conversions {
-    use crate::parser::span::Span;
 
     use super::*;
 
@@ -189,15 +182,6 @@ mod test_conversions {
                 left: Box::new(left),
                 right: Box::new(right),
                 operator,
-            }
-        }
-    }
-
-    impl<T> Spanned<T> {
-        pub fn untracked(node: T) -> Self {
-            Self {
-                span: Span { start: 0, end: 0 },
-                node,
             }
         }
     }
@@ -230,25 +214,25 @@ mod test_conversions {
                     args.into_iter().map(|a| a.strip_spans()).collect(),
                 ),
             };
-            Spanned::untracked(node)
+            Node::untracked(node)
         }
     }
 
     impl From<Literal> for Expression {
         fn from(l: Literal) -> Self {
-            Spanned::untracked(ExpressionKind::from(l))
+            Node::untracked(ExpressionKind::from(l))
         }
     }
 
     impl From<Unary> for Expression {
         fn from(u: Unary) -> Self {
-            Spanned::untracked(ExpressionKind::from(u))
+            Node::untracked(ExpressionKind::from(u))
         }
     }
 
     impl From<bool> for Expression {
         fn from(b: bool) -> Self {
-            Spanned::untracked(ExpressionKind::from(b))
+            Node::untracked(ExpressionKind::from(b))
         }
     }
 }

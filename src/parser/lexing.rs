@@ -1,6 +1,6 @@
 use crate::parser::{
     diagnostic::Diagnostic,
-    span::Span,
+    node::Span,
     token::{Token, TokenKind},
 };
 
@@ -224,7 +224,7 @@ pub fn scan(source: &str) -> ScanResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{diagnostic::Severity, lexing::scan, span::Span, token::TokenKind};
+    use crate::parser::{diagnostic::Severity, lexing::scan, node::Span, token::TokenKind};
 
     #[test]
     fn token_indexes() {

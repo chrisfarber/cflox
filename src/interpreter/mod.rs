@@ -15,8 +15,8 @@ use crate::{
             LogicalOp, Statement, StatementKind, Unary,
         },
         diagnostic::Severity,
+        node::Node,
         parse_str,
-        span::Spanned,
     },
 };
 
@@ -312,9 +312,9 @@ impl Interpreter {
             eprintln!("parsed AST: {:#?}", decls);
         } else {
             for decl in decls {
-                if let DeclarationKind::Statement(Spanned {
+                if let DeclarationKind::Statement(Node {
                     node: StatementKind::Expression(expr),
-                    span: _,
+                    ..
                 }) = decl.node
                 {
                     // Here we are in a special case: the declaration is actually a
