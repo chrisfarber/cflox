@@ -47,15 +47,13 @@ impl Scanner {
         self.tokens.push(token);
     }
 
-    /// Advances `cur_token_start` to the current index, effectively ignoring any
-    /// chars scanned so far, so they will not end up in the span for the next token
-    fn drop_chars(&mut self) {
-        self.cur_token_start = self.current;
-    }
-
     pub fn scan(&mut self) {
         loop {
+            // Each iteration begins a fresh token, so anchor its span here.
+            // Without this, tokens with no whitespace between them (`a=a`)
+            // would all share the span start of the last whitespace boundary.
             let start = self.current;
+            self.cur_token_start = start;
             let Some(current) = self.advance() else {
                 break;
             };
@@ -104,14 +102,13 @@ impl Scanner {
                         while self.peek() != Some(&'\n') {
                             self.advance();
                         }
-                        self.drop_chars();
                     } else {
                         self.push_token(TokenKind::Slash);
                     }
                 }
-                ' ' | '\t' | '\r' | '\n' => {
-                    self.drop_chars();
-                }
+                // Whitespace produces no token; the next iteration re-anchors
+                // the span, so there is nothing to do here.
+                ' ' | '\t' | '\r' | '\n' => {}
                 '"' => {
                     let content_start = self.current;
                     let mut content_end = content_start;
@@ -240,6 +237,22 @@ mod tests {
         let minus2 = tokens.get(2).unwrap().span;
         assert_eq!(minus2.start, 4);
         assert_eq!(minus2.end, 5);
+    }
+
+    #[test]
+    fn adjacent_tokens_have_independent_spans() {
+        // With no whitespace between tokens, each span must start at its own
+        // token rather than accumulating from the previous token's start.
+        let (tokens, _) = scan("a=a");
+        assert_eq!(tokens[0].span, Span { start: 0, end: 1 }); // a
+        assert_eq!(tokens[1].span, Span { start: 1, end: 2 }); // =
+        assert_eq!(tokens[2].span, Span { start: 2, end: 3 }); // a
+
+        // Multi-char operators glued to their operands stay correct too.
+        let (tokens, _) = scan("1==2");
+        assert_eq!(tokens[0].span, Span { start: 0, end: 1 }); // 1
+        assert_eq!(tokens[1].span, Span { start: 1, end: 3 }); // ==
+        assert_eq!(tokens[2].span, Span { start: 3, end: 4 }); // 2
     }
 
     #[test]
