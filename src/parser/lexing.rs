@@ -99,7 +99,10 @@ impl Scanner {
                 }
                 '/' => {
                     if self.match_next('/') {
-                        while self.peek() != Some(&'\n') {
+                        // Consume the rest of the line. Stop at the newline or
+                        // at end-of-input -- peek() returns None at EOF, and
+                        // advancing past it would spin forever.
+                        while self.peek().is_some_and(|c| *c != '\n') {
                             self.advance();
                         }
                     } else {
@@ -277,6 +280,15 @@ true
         let lit_true = &tokens[1];
         assert_eq!(hello.span.in_source(source), "hello");
         assert_eq!(lit_true.span.in_source(source), "true");
+    }
+
+    #[test]
+    fn comment_at_eof_without_newline_terminates() {
+        // A trailing line comment with no final newline must not spin forever.
+        let (tokens, diagnostics) = scan("1 // end");
+        assert!(diagnostics.is_empty());
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].node, TokenKind::Number(1.0));
     }
 
     #[test]
