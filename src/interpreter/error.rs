@@ -19,4 +19,8 @@ pub enum LoxError {
     WrongArity { expected: usize, received: usize },
     #[error("return")]
     Return(Value),
+    #[error("only instances have properties")]
+    InvalidPropertyAcess,
+    #[error("Undefined property {property:?}")]
+    UndefinedProperty { property: String },
 }

@@ -86,6 +86,17 @@ impl<T> Node<T> {
     pub fn id(&self) -> NodeId {
         self.id
     }
+
+    /// change the value of a node. Its node ID is preserved and the
+    /// original is destroyed.
+    pub fn convert<O>(self, f: fn(T) -> O) -> Node<O>
+    where
+        O: PartialEq,
+    {
+        let Self { id, span, node } = self;
+        let node = f(node);
+        Node { id, span, node }
+    }
 }
 
 impl<T> From<&Node<T>> for Span {

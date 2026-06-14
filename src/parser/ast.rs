@@ -19,6 +19,7 @@ pub enum ExpressionKind {
     Assign(String, Box<Expression>),
     Logical(Logical),
     Call(Box<Expression>, Vec<Expression>),
+    Get(Box<Expression>, String),
 }
 
 pub type Expression = Node<ExpressionKind>;
@@ -62,6 +63,7 @@ pub enum DeclarationKind {
         initial: Option<Expression>,
     },
     Function(Function),
+    Class(Class),
 }
 
 pub type Declaration = Node<DeclarationKind>;
@@ -72,6 +74,16 @@ pub struct Function {
     pub name_span: Span,
     pub parameter_names: Vec<(Span, String)>,
     pub body: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Class {
+    pub name: String,
+    pub name_span: Span,
+    // Unsure whether this is a good approach. Could opt for
+    // a vec of declarations instead, but, this would
+    // enable the construction of invalid ASTs
+    pub methods: Vec<Node<Function>>,
 }
 
 impl From<Statement> for Declaration {
@@ -214,6 +226,9 @@ mod test_conversions {
                     Box::new(callee.strip_spans()),
                     args.into_iter().map(|a| a.strip_spans()).collect(),
                 ),
+                ExpressionKind::Get(expr, ident) => {
+                    ExpressionKind::Get(Box::new(expr.strip_spans()), ident)
+                }
             };
             Node::untracked(node)
         }

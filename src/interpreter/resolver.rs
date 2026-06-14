@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::parser::{
     ast::{
-        Declaration, DeclarationKind, Expression, ExpressionKind, Function, Statement,
+        Class, Declaration, DeclarationKind, Expression, ExpressionKind, Function, Statement,
         StatementKind, Unary,
     },
     diagnostic::Diagnostic,
@@ -68,6 +68,7 @@ impl<'a> Resolver<'a> {
         match &decl.node {
             DeclarationKind::Statement(stmt) => self.resolve_statement(stmt),
             DeclarationKind::Function(fdecl) => self.resolve_function_declaration(decl.span, fdecl),
+            DeclarationKind::Class(klass) => self.resolve_class_declaration(decl.span, klass),
             DeclarationKind::Var {
                 identifier,
                 initial,
@@ -132,6 +133,13 @@ impl<'a> Resolver<'a> {
         self.current_function = enclosing_function;
     }
 
+    fn resolve_class_declaration(&mut self, span: Span, klass: &Class) {
+        self.declare(span, &klass.name);
+        self.define(&klass.name);
+
+        // TODO methods
+    }
+
     fn resolve_var_declaration(
         &mut self,
         span: Span,
@@ -178,6 +186,9 @@ impl<'a> Resolver<'a> {
                 Unary::Negate(expr) | Unary::Not(expr) => self.resolve_expression(expr),
             },
             ExpressionKind::Literal(_) => {}
+            ExpressionKind::Get(expr, _ident) => {
+                self.resolve_expression(expr);
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 use crate::parser::{
     ast::{
-        Binary, BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
-        Logical, Statement, StatementKind,
+        Binary, BinaryOp, Class, Declaration, DeclarationKind, Expression, ExpressionKind,
+        Function, Logical, Statement, StatementKind,
     },
     diagnostic::Diagnostic,
     lexing::scan,
@@ -149,6 +149,7 @@ impl Parser {
 
     pub fn parse_declaration(&mut self) -> ParseDeclarationResult {
         match self.peek_type() {
+            Some(TokenKind::Class) => self.parse_class_declaration(),
             Some(TokenKind::Var) => self.parse_var_declaration(),
             Some(TokenKind::Fun) => self.parse_fun_declaration(),
             _ => self.parse_statement_declaration(),
@@ -161,8 +162,18 @@ impl Parser {
     }
 
     pub fn parse_fun_declaration(&mut self) -> ParseDeclarationResult {
-        let fun = self.expect_token(TokenKind::Fun)?;
+        let fun_tok = self.expect_token(TokenKind::Fun)?;
+        let mut fun = self.parse_fun_declaration()?;
+        fun.span.start = fun_tok.start;
 
+        Ok(fun)
+    }
+
+    /// Parse a function body, but, without any particular leading token.
+    /// I.e., this will not check for the "fun" token. This is split out
+    /// so that it may be used both for parsing functions (`parse_fun_declaration`)
+    /// and for class methods.
+    pub fn parse_function(&mut self) -> Result<Node<Function>, Diagnostic> {
         let (fun_name_span, fun_name) = self.expect_identifier()?;
         let mut parameter_names = vec![];
 
@@ -181,14 +192,38 @@ impl Parser {
 
         let body = self.parse_block_statement()?;
 
-        Ok(Declaration::encapsulating(
-            fun,
+        Ok(Node::encapsulating(
+            fun_name_span,
             body.span,
-            DeclarationKind::Function(Function {
+            Function {
                 name_span: fun_name_span,
                 name: fun_name,
                 parameter_names,
                 body: Box::new(body),
+            },
+        ))
+    }
+
+    pub fn parse_class_declaration(&mut self) -> ParseDeclarationResult {
+        let klass = self.expect_token(TokenKind::Class)?;
+
+        let (klass_name_span, klass_name) = self.expect_identifier()?;
+        self.expect_token(TokenKind::LeftBrace)?;
+
+        let mut methods = vec![];
+        while let Some(TokenKind::Identifier(_)) = self.peek_type() {
+            let fun = self.parse_function()?;
+            methods.push(fun);
+        }
+
+        let end = self.expect_token(TokenKind::RightBrace)?;
+        Ok(Declaration::encapsulating(
+            klass,
+            end,
+            DeclarationKind::Class(Class {
+                name: klass_name,
+                name_span: klass_name_span,
+                methods,
             }),
         ))
     }
@@ -507,10 +542,20 @@ impl Parser {
         let mut expr = self.parse_primary()?;
 
         loop {
-            if self.peek_type() == Some(&TokenKind::LeftParen) {
-                expr = self.finish_call(expr)?;
-            } else {
-                break;
+            match self.peek_type() {
+                Some(TokenKind::LeftParen) => {
+                    expr = self.finish_call(expr)?;
+                }
+                Some(TokenKind::Dot) => {
+                    self.expect_token(TokenKind::Dot)?;
+                    let (field_name_span, field_name) = self.expect_identifier()?;
+                    expr = Expression::encapsulating(
+                        expr.span,
+                        field_name_span,
+                        ExpressionKind::Get(Box::new(expr), field_name),
+                    )
+                }
+                _ => break,
             }
         }
 

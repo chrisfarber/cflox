@@ -15,7 +15,7 @@ use crate::{
     },
     parser::{
         ast::{
-            BinaryOp, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
+            BinaryOp, Class, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
             LogicalOp, Statement, StatementKind, Unary,
         },
         diagnostic::has_error,
@@ -69,6 +69,7 @@ impl Interpreter {
         match &decl.node {
             DeclarationKind::Statement(stmt) => self.execute_statement(stmt),
             DeclarationKind::Function(f) => self.execute_fun_declaration(f),
+            DeclarationKind::Class(c) => self.execute_class_declaration(c),
             DeclarationKind::Var {
                 identifier,
                 initial,
@@ -159,6 +160,12 @@ impl Interpreter {
         Ok(())
     }
 
+    pub fn execute_class_declaration(&mut self, class_decl: &Class) -> Result<(), LoxError> {
+        let class_val = Value::Class(Gc::new(value::Class::new(class_decl.name.clone())));
+        self.environment.define(&class_decl.name, class_val);
+        Ok(())
+    }
+
     pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
         match &expr.node {
             ExpressionKind::Literal(Literal::Nil) => Ok(Value::Nil),
@@ -239,6 +246,21 @@ impl Interpreter {
                     }
                 }
             }
+            ExpressionKind::Get(expr, ident) => {
+                let object = self.evaluate(expr)?;
+                let Value::Instance(inst) = object else {
+                    return Err(LoxError::InvalidPropertyAcess);
+                };
+
+                let res =
+                    inst.borrow()
+                        .get_field(ident)
+                        .ok_or_else(|| LoxError::UndefinedProperty {
+                            property: ident.to_owned(),
+                        })?;
+
+                Ok(res)
+            }
         }
     }
 
@@ -289,6 +311,22 @@ impl Interpreter {
                 } else {
                     result.map(|_| Value::Nil)
                 }
+            }
+            Value::Class(class_ref) => {
+                let class = class_ref.borrow();
+
+                let arg_count = args.len();
+                let init_arity = class.arity();
+                if arg_count != init_arity {
+                    return Err(LoxError::WrongArity {
+                        expected: init_arity,
+                        received: arg_count,
+                    });
+                }
+
+                let inst = Value::Instance(Gc::new(value::Instance::new(class_ref.clone())));
+
+                Ok(inst)
             }
             _ => Err(LoxError::InvalidFunctionCall),
         }

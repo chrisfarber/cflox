@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -14,6 +15,8 @@ pub enum Value {
     String(String),
     BuiltinFn(Rc<BuiltinFn>),
     Function(Gc<Function>),
+    Class(Gc<Class>),
+    Instance(Gc<Instance>),
 }
 
 impl Value {
@@ -46,6 +49,8 @@ impl Value {
             Self::String(s) => s.clone(),
             Self::BuiltinFn(builtin) => format!("<builtin: {}>", builtin.name),
             Self::Function(f) => format!("<function: {}>", f.borrow().name),
+            Self::Class(c) => format!("<class: {}>", c.borrow().name),
+            Self::Instance(c) => format!("<Instance: {}>", c.borrow().class_name()),
         }
     }
 
@@ -61,14 +66,15 @@ impl Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::Nil, Value::Nil) => true,
-            (Value::Boolean(l), Value::Boolean(r)) => l == r,
-            (Value::Number(l), Value::Number(r)) => l == r,
-            (Value::String(l), Value::String(r)) => l == r,
-            (Value::BuiltinFn(l), Value::BuiltinFn(r)) => Rc::ptr_eq(l, r),
-            (Value::Function(l), Value::Function(r)) => Gc::ptr_eq(l, r),
-            _ => false,
+        match self {
+            Value::Nil => matches!(other, Value::Nil),
+            Value::Boolean(l) => matches!(other, Value::Boolean(r) if l == r),
+            Value::Number(l) => matches!(other, Value::Number(r) if l == r),
+            Value::String(l) => matches!(other, Value::String(r) if l == r),
+            Value::BuiltinFn(l) => matches!(other, Value::BuiltinFn(r) if Rc::ptr_eq(l, r)),
+            Value::Function(l) => matches!(other, Value::Function(r) if Gc::ptr_eq(l, r)),
+            Value::Class(l) => matches!(other, Value::Class(r) if Gc::ptr_eq(l, r)),
+            Value::Instance(l) => matches!(other, Value::Instance(r) if Gc::ptr_eq(l, r)),
         }
     }
 }
@@ -129,6 +135,55 @@ impl Function {
 impl fmt::Debug for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<function: {}>", self.name)
+    }
+}
+
+pub struct Class {
+    pub name: String,
+}
+
+impl Class {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    /// The arity of the constructor for the class
+    pub fn arity(&self) -> usize {
+        0
+    }
+}
+
+impl fmt::Debug for Class {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<class: {}>", self.name)
+    }
+}
+
+pub struct Instance {
+    pub class: Gc<Class>,
+    pub fields: HashMap<String, Value>,
+}
+
+impl Instance {
+    pub fn new(class: Gc<Class>) -> Self {
+        Self {
+            class,
+            fields: HashMap::new(),
+        }
+    }
+
+    pub fn class_name(&self) -> String {
+        self.class.borrow().name.to_owned()
+    }
+
+    pub fn get_field(&self, field: &str) -> Option<Value> {
+        self.fields.get(field).cloned()
+    }
+}
+
+impl fmt::Debug for Instance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<instance: {}>", self.class.borrow().name)
     }
 }
 

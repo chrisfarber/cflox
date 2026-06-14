@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn token_indexes() {
         let (tokens, _) = scan("8 - - 2");
-        let eight = tokens.get(0).unwrap().span;
+        let eight = tokens.first().unwrap().span;
         assert_eq!(eight.start, 0);
         assert_eq!(eight.end, 1);
 
