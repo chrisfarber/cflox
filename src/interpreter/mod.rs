@@ -219,8 +219,8 @@ impl Interpreter {
                         (Value::String(l), Value::String(r)) => Ok(Value::String(l + &r)),
                         _ => Err(LoxError::InvalidAdd),
                     },
-                    BinaryOp::Equal => Ok(Value::Boolean(left.equals(&right))),
-                    BinaryOp::NotEqual => Ok(Value::Boolean(!left.equals(&right))),
+                    BinaryOp::Equal => Ok(Value::Boolean(left.eq(&right))),
+                    BinaryOp::NotEqual => Ok(Value::Boolean(!left.eq(&right))),
                     op => {
                         let l = left.get_number()?;
                         let r = right.get_number()?;

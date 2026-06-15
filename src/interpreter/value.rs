@@ -1,16 +1,12 @@
 use std::fmt;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::gc::Gc;
 use crate::interpreter::{Interpreter, error::LoxError};
 use crate::parser::ast::Statement;
 
-static NEXT_FUN_ID: AtomicU64 = AtomicU64::new(0);
-static NEXT_BUILTIN_ID: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Nil,
     Boolean(bool),
@@ -39,18 +35,6 @@ impl Value {
         }
     }
 
-    pub fn equals(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Nil, Self::Nil) => true,
-            (Self::Boolean(l), Self::Boolean(r)) => l == r,
-            (Self::Number(l), Self::Number(r)) => l == r,
-            (Self::String(l), Self::String(r)) => l == r,
-            (Self::BuiltinFn(l), Self::BuiltinFn(r)) => l == r,
-            (Self::Function(l), Self::Function(r)) => l == r,
-            _ => false,
-        }
-    }
-
     /// The user-facing display form of a value, as `print` renders it.
     /// Strings are shown verbatim, without surrounding quotes.
     pub fn display(&self) -> String {
@@ -75,11 +59,24 @@ impl Value {
     }
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Nil, Value::Nil) => true,
+            (Value::Boolean(l), Value::Boolean(r)) => l == r,
+            (Value::Number(l), Value::Number(r)) => l == r,
+            (Value::String(l), Value::String(r)) => l == r,
+            (Value::BuiltinFn(l), Value::BuiltinFn(r)) => Rc::ptr_eq(l, r),
+            (Value::Function(l), Value::Function(r)) => Gc::ptr_eq(l, r),
+            _ => false,
+        }
+    }
+}
+
 type BuiltinFnPtr = Rc<dyn Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError>>;
 
 #[derive(Clone)]
 pub struct BuiltinFn {
-    id: u64,
     pub arity: usize,
     pub name: String,
     pub f: BuiltinFnPtr,
@@ -92,7 +89,6 @@ impl BuiltinFn {
         f: impl Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static,
     ) -> Self {
         Self {
-            id: NEXT_BUILTIN_ID.fetch_add(1, Ordering::Relaxed),
             arity,
             name: name.into(),
             f: Rc::new(f),
@@ -106,15 +102,8 @@ impl fmt::Debug for BuiltinFn {
     }
 }
 
-impl PartialEq for BuiltinFn {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
 /// A callable function value for a user defined function.
 pub struct Function {
-    id: u64,
     pub name: String,
     pub environment: Environment,
     pub parameter_names: Vec<String>,
@@ -129,7 +118,6 @@ impl Function {
         body: Box<Statement>,
     ) -> Self {
         Self {
-            id: NEXT_FUN_ID.fetch_add(1, Ordering::Relaxed),
             name,
             environment,
             parameter_names,
@@ -141,18 +129,6 @@ impl Function {
 impl fmt::Debug for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<function: {}>", self.name)
-    }
-}
-
-impl PartialEq for Function {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl PartialEq for Gc<Function> {
-    fn eq(&self, other: &Self) -> bool {
-        self.borrow().eq(&other.borrow())
     }
 }
 
@@ -172,32 +148,26 @@ mod tests {
     }
 
     #[test]
+    fn value_equality() {
+        let b1 = BuiltinFn::new("b1", 0, |_int, _env| Ok(Value::Nil));
+        let vb1 = Value::BuiltinFn(Rc::new(b1.clone()));
+        let vb1_copy = vb1.clone();
+        let vb1_fresh = Value::BuiltinFn(Rc::new(b1.clone()));
+
+        assert!(Value::Nil == Value::Nil);
+        assert!(Value::Nil != Value::Boolean(false));
+        assert!(vb1 == vb1_copy);
+        assert!(vb1 != vb1_fresh);
+        assert!(Value::Number(0.0) == Value::Number(0.0));
+        assert!(Value::Number(0.0) != Value::Number(1.0));
+    }
+
+    #[test]
     fn builtin_call() {
         let b = BuiltinFn::new("add", 2, add_builtin);
         let mut interp = Interpreter::new();
         let result = (b.f)(&mut interp, vec![Value::Number(1.0), Value::Number(2.0)]);
         assert_eq!(result.unwrap(), Value::Number(3.0));
-    }
-
-    #[test]
-    fn clone_preserves_identity() {
-        let a = BuiltinFn::new("clock", 0, dummy_builtin);
-        let b = a.clone();
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn distinct_builtins_are_not_equal() {
-        let a = BuiltinFn::new("clock", 0, dummy_builtin);
-        let b = BuiltinFn::new("clock", 0, dummy_builtin);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn same_fn_different_names_are_not_equal() {
-        let a = BuiltinFn::new("foo", 0, dummy_builtin);
-        let b = BuiltinFn::new("bar", 0, dummy_builtin);
-        assert_ne!(a, b);
     }
 
     #[test]

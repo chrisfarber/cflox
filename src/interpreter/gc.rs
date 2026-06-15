@@ -35,6 +35,10 @@ impl<T> Gc<T> {
     pub fn borrow_mut(&self) -> GcRefMut<'_, T> {
         self.obj.borrow_mut()
     }
+
+    pub fn ptr_eq(left: &Gc<T>, right: &Gc<T>) -> bool {
+        Rc::ptr_eq(&left.obj, &right.obj)
+    }
 }
 
 impl<T> Clone for Gc<T> {
