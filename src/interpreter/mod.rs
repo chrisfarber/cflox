@@ -261,6 +261,18 @@ impl Interpreter {
 
                 Ok(res)
             }
+            ExpressionKind::Set(object_expr, property, value_expr) => {
+                let object = self.evaluate(object_expr)?;
+
+                let Value::Instance(inst) = object else {
+                    return Err(LoxError::InvalidPropertyAcess);
+                };
+
+                let value = self.evaluate(value_expr)?;
+                inst.borrow_mut().set_field(property, value.clone());
+
+                Ok(value)
+            }
         }
     }
 

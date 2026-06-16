@@ -189,6 +189,10 @@ impl<'a> Resolver<'a> {
             ExpressionKind::Get(expr, _ident) => {
                 self.resolve_expression(expr);
             }
+            ExpressionKind::Set(left, _, right) => {
+                self.resolve_expression(left);
+                self.resolve_expression(right);
+            }
         }
     }
 

@@ -20,6 +20,7 @@ pub enum ExpressionKind {
     Logical(Logical),
     Call(Box<Expression>, Vec<Expression>),
     Get(Box<Expression>, String),
+    Set(Box<Expression>, String, Box<Expression>),
 }
 
 pub type Expression = Node<ExpressionKind>;
@@ -229,6 +230,11 @@ mod test_conversions {
                 ExpressionKind::Get(expr, ident) => {
                     ExpressionKind::Get(Box::new(expr.strip_spans()), ident)
                 }
+                ExpressionKind::Set(left, ident, right) => ExpressionKind::Set(
+                    Box::new(left.strip_spans()),
+                    ident,
+                    Box::new(right.strip_spans()),
+                ),
             };
             Node::untracked(node)
         }

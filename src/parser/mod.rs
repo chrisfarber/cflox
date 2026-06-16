@@ -439,14 +439,18 @@ impl Parser {
         if self.peek_type() == Some(&TokenKind::Equal) {
             self.advance()?;
             let value = self.parse_assignment()?;
-            if let ExpressionKind::Variable(ident) = expr.node {
-                Ok(Expression::encapsulating(
+            match expr.node {
+                ExpressionKind::Variable(ident) => Ok(Expression::encapsulating(
                     expr.span,
                     value.span,
                     ExpressionKind::Assign(ident, Box::new(value)),
-                ))
-            } else {
-                Err(Diagnostic::error(expr.span, "Invalid assignment target"))
+                )),
+                ExpressionKind::Get(object, ident) => Ok(Expression::encapsulating(
+                    expr.span,
+                    value.span,
+                    ExpressionKind::Set(object, ident, Box::new(value)),
+                )),
+                _ => Err(Diagnostic::error(expr.span, "Invalid assignment target")),
             }
         } else {
             Ok(expr)

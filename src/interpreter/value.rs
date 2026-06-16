@@ -179,6 +179,10 @@ impl Instance {
     pub fn get_field(&self, field: &str) -> Option<Value> {
         self.fields.get(field).cloned()
     }
+
+    pub fn set_field(&mut self, property: &str, value: Value) {
+        self.fields.insert(property.to_owned(), value);
+    }
 }
 
 impl fmt::Debug for Instance {
