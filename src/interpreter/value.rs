@@ -140,11 +140,12 @@ impl fmt::Debug for Function {
 
 pub struct Class {
     pub name: String,
+    pub methods: HashMap<String, Gc<Function>>,
 }
 
 impl Class {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn new(name: String, methods: HashMap<String, Gc<Function>>) -> Self {
+        Self { name, methods }
     }
 
     /// The arity of the constructor for the class
@@ -174,6 +175,15 @@ impl Instance {
 
     pub fn class_name(&self) -> String {
         self.class.borrow().name.to_owned()
+    }
+
+    pub fn get(&self, field: &str) -> Option<Value> {
+        self.get_field(field).or_else(|| self.get_method(field))
+    }
+
+    pub fn get_method(&self, field: &str) -> Option<Value> {
+        let class = self.class.borrow();
+        class.methods.get(field).map(|f| Value::Function(f.clone()))
     }
 
     pub fn get_field(&self, field: &str) -> Option<Value> {

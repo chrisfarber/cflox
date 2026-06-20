@@ -34,6 +34,7 @@ impl Resolutions {
 enum FunctionType {
     None,
     Function,
+    Method,
 }
 
 #[derive(Debug)]
@@ -120,16 +121,7 @@ impl<'a> Resolver<'a> {
 
         let enclosing_function = self.current_function;
         self.current_function = FunctionType::Function;
-        self.begin_scope();
-        for (param_span, param) in &fdecl.parameter_names {
-            self.declare(*param_span, param);
-            self.define(param);
-        }
-        let StatementKind::Block(decls) = &fdecl.body.node else {
-            unreachable!("function bodies are always blocks");
-        };
-        self.resolve_declarations(decls);
-        self.end_scope();
+        self.resolve_function(fdecl);
         self.current_function = enclosing_function;
     }
 
@@ -137,7 +129,23 @@ impl<'a> Resolver<'a> {
         self.declare(span, &klass.name);
         self.define(&klass.name);
 
-        // TODO methods
+        for meth in &klass.methods {
+            self.current_function = FunctionType::Method;
+            self.resolve_function(&meth.node);
+        }
+    }
+
+    fn resolve_function(&mut self, func: &Function) {
+        self.begin_scope();
+        for (param_span, param) in &func.parameter_names {
+            self.declare(*param_span, param);
+            self.define(param);
+        }
+        let StatementKind::Block(decls) = &func.body.node else {
+            unreachable!("function bodies are always blocks");
+        };
+        self.resolve_declarations(decls);
+        self.end_scope();
     }
 
     fn resolve_var_declaration(

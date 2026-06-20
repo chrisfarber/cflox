@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::read_to_string,
     io::{self, IsTerminal, Write},
     path::Path,
@@ -145,8 +146,8 @@ impl Interpreter {
         result
     }
 
-    pub fn execute_fun_declaration(&mut self, fun_decl: &Function) -> Result<(), LoxError> {
-        let fn_val = Value::Function(Gc::new(value::Function::new(
+    pub fn construct_fun(&mut self, fun_decl: &Function) -> Gc<value::Function> {
+        Gc::new(value::Function::new(
             fun_decl.name.clone(),
             self.environment.clone(),
             fun_decl
@@ -155,14 +156,26 @@ impl Interpreter {
                 .map(|(_, name)| name.to_owned())
                 .collect(),
             fun_decl.body.clone(),
-        )));
+        ))
+    }
+
+    pub fn execute_fun_declaration(&mut self, fun_decl: &Function) -> Result<(), LoxError> {
+        let fn_val = Value::Function(self.construct_fun(fun_decl));
         self.environment.define(&fun_decl.name, fn_val);
         Ok(())
     }
 
     pub fn execute_class_declaration(&mut self, class_decl: &Class) -> Result<(), LoxError> {
-        let class_val = Value::Class(Gc::new(value::Class::new(class_decl.name.clone())));
-        self.environment.define(&class_decl.name, class_val);
+        self.environment.define(&class_decl.name, Value::Nil);
+
+        let mut methods: HashMap<String, Gc<value::Function>> = HashMap::new();
+        for func_node in &class_decl.methods {
+            let fun = self.construct_fun(&func_node.node);
+            methods.insert(func_node.node.name.to_owned(), fun);
+        }
+
+        let class_val = Value::Class(Gc::new(value::Class::new(class_decl.name.clone(), methods)));
+        self.environment.assign(&class_decl.name, class_val)?;
         Ok(())
     }
 
@@ -252,12 +265,12 @@ impl Interpreter {
                     return Err(LoxError::InvalidPropertyAcess);
                 };
 
-                let res =
-                    inst.borrow()
-                        .get_field(ident)
-                        .ok_or_else(|| LoxError::UndefinedProperty {
-                            property: ident.to_owned(),
-                        })?;
+                let res = inst
+                    .borrow()
+                    .get(ident)
+                    .ok_or_else(|| LoxError::UndefinedProperty {
+                        property: ident.to_owned(),
+                    })?;
 
                 Ok(res)
             }
