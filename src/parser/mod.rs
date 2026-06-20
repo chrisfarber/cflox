@@ -611,6 +611,7 @@ impl Parser {
                 Ok(Expression::encapsulating(&next, right_paren, inner.node))
             }
             TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
+            TokenKind::This => wrap(ast::ExpressionKind::This),
             _ => Err(Diagnostic::error(&next, "unexpected token")),
         }
     }

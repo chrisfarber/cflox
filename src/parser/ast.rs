@@ -21,6 +21,7 @@ pub enum ExpressionKind {
     Call(Box<Expression>, Vec<Expression>),
     Get(Box<Expression>, String),
     Set(Box<Expression>, String, Box<Expression>),
+    This,
 }
 
 pub type Expression = Node<ExpressionKind>;

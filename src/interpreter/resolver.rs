@@ -37,11 +37,18 @@ enum FunctionType {
     Method,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum ClassType {
+    None,
+    Class,
+}
+
 #[derive(Debug)]
 struct Resolver<'a> {
     mapping: &'a mut Resolutions,
     scopes: Vec<HashMap<String, bool>>,
     current_function: FunctionType,
+    current_class: ClassType,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -51,6 +58,7 @@ impl<'a> Resolver<'a> {
             mapping: resolutions,
             scopes: vec![],
             current_function: FunctionType::None,
+            current_class: ClassType::None,
             diagnostics: vec![],
         }
     }
@@ -126,13 +134,26 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_class_declaration(&mut self, span: Span, klass: &Class) {
+        let enclosing_type = self.current_class;
+        self.current_class = ClassType::Class;
         self.declare(span, &klass.name);
         self.define(&klass.name);
 
+        self.begin_scope();
+        self.scopes
+            .last_mut()
+            .expect("class scope")
+            .insert("this".to_owned(), true);
+
         for meth in &klass.methods {
+            let enclosing_function = self.current_function;
             self.current_function = FunctionType::Method;
             self.resolve_function(&meth.node);
+            self.current_function = enclosing_function;
         }
+
+        self.end_scope();
+        self.current_class = enclosing_type;
     }
 
     fn resolve_function(&mut self, func: &Function) {
@@ -200,6 +221,16 @@ impl<'a> Resolver<'a> {
             ExpressionKind::Set(left, _, right) => {
                 self.resolve_expression(left);
                 self.resolve_expression(right);
+            }
+            ExpressionKind::This => {
+                if self.current_class != ClassType::Class {
+                    self.diagnostics.push(Diagnostic::error(
+                        expr.span,
+                        "Can't use 'this' outside of a class.",
+                    ));
+                    return;
+                }
+                self.resolve_local(expr, "this");
             }
         }
     }

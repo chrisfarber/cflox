@@ -1,0 +1,14 @@
+class Thing {
+    setThis(to) {
+        // "invalid assignment target"; fails to parse
+        this = to;
+    }
+
+    getThis() {
+        return this;
+    }
+}
+
+var x = Thing();
+x.setThis(42);
+print x.getThis();

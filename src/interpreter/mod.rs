@@ -186,13 +186,8 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
             ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
             ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
-            ExpressionKind::Variable(ident) => {
-                if let Some(distance) = self.resolutions.resolve(expr) {
-                    self.environment.get_at(distance, ident)
-                } else {
-                    self.globals.get(ident)
-                }
-            }
+            ExpressionKind::This => self.evaluate_variable(expr, "this"),
+            ExpressionKind::Variable(ident) => self.evaluate_variable(expr, ident),
             ExpressionKind::Assign(ident, inner) => {
                 let value = self.evaluate(inner)?;
                 if let Some(distance) = self.resolutions.resolve(expr) {
@@ -261,16 +256,15 @@ impl Interpreter {
             }
             ExpressionKind::Get(expr, ident) => {
                 let object = self.evaluate(expr)?;
-                let Value::Instance(inst) = object else {
+                let Value::Instance(inst) = object.clone() else {
                     return Err(LoxError::InvalidPropertyAcess);
                 };
 
-                let res = inst
-                    .borrow()
-                    .get(ident)
-                    .ok_or_else(|| LoxError::UndefinedProperty {
+                let res = inst.borrow().get(ident, object).ok_or_else(|| {
+                    LoxError::UndefinedProperty {
                         property: ident.to_owned(),
-                    })?;
+                    }
+                })?;
 
                 Ok(res)
             }
@@ -286,6 +280,14 @@ impl Interpreter {
 
                 Ok(value)
             }
+        }
+    }
+
+    pub fn evaluate_variable(&mut self, expr: &Expression, ident: &str) -> Result<Value, LoxError> {
+        if let Some(distance) = self.resolutions.resolve(expr) {
+            self.environment.get_at(distance, ident)
+        } else {
+            self.globals.get(ident)
         }
     }
 

@@ -130,6 +130,18 @@ impl Function {
             body,
         }
     }
+
+    pub fn bind(&self, to: Value) -> Self {
+        // this germany v ivory coast game is stressing me out too much to write good code
+        let environment = self.environment.child();
+        environment.define("this", to);
+        Self {
+            name: self.name.clone(),
+            environment,
+            parameter_names: self.parameter_names.clone(),
+            body: self.body.clone(),
+        }
+    }
 }
 
 impl fmt::Debug for Function {
@@ -177,13 +189,17 @@ impl Instance {
         self.class.borrow().name.to_owned()
     }
 
-    pub fn get(&self, field: &str) -> Option<Value> {
-        self.get_field(field).or_else(|| self.get_method(field))
+    pub fn get(&self, field: &str, this: Value) -> Option<Value> {
+        self.get_field(field)
+            .or_else(|| self.get_method(field, this))
     }
 
-    pub fn get_method(&self, field: &str) -> Option<Value> {
+    pub fn get_method(&self, field: &str, this: Value) -> Option<Value> {
         let class = self.class.borrow();
-        class.methods.get(field).map(|f| Value::Function(f.clone()))
+        class
+            .methods
+            .get(field)
+            .map(|f| Value::Function(Gc::new(f.borrow().bind(this))))
     }
 
     pub fn get_field(&self, field: &str) -> Option<Value> {
