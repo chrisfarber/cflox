@@ -314,49 +314,70 @@ impl Interpreter {
                 let out = (builtin.f)(self, args)?;
                 Ok(out)
             }
-            Value::Function(fun_ref) => {
-                let fun = fun_ref.borrow();
-
-                if args.len() != fun.parameter_names.len() {
-                    return Err(LoxError::WrongArity {
-                        expected: fun.parameter_names.len(),
-                        received: args.len(),
-                    });
-                }
-                let fun_env = fun.environment.child();
-                for (name, value) in fun.parameter_names.iter().zip(args) {
-                    fun_env.define(name, value);
-                }
-
-                let StatementKind::Block(decls) = &fun.body.node else {
-                    unreachable!("function bodies are always blocks");
-                };
-                let result = self.execute_block(decls, fun_env);
-
-                if let Err(LoxError::Return(return_val)) = result {
-                    Ok(return_val)
-                } else {
-                    result.map(|_| Value::Nil)
-                }
-            }
+            Value::Function(fun_ref) => self.apply(fun_ref, &args),
             Value::Class(class_ref) => {
-                let class = class_ref.borrow();
+                let inst = Gc::new(value::Instance::new(class_ref.clone()));
+                let inst_value = Value::Instance(inst.clone());
 
-                let arg_count = args.len();
-                let init_arity = class.arity();
-                if arg_count != init_arity {
-                    return Err(LoxError::WrongArity {
-                        expected: init_arity,
-                        received: arg_count,
-                    });
+                let init = match inst.borrow().get_method("init", inst_value.clone()) {
+                    Some(Value::Function(init)) => Some(init.clone()),
+                    None => {
+                        if !args.is_empty() {
+                            return Err(LoxError::WrongArity {
+                                expected: 0,
+                                received: 0,
+                            });
+                        }
+                        None
+                    }
+                    _ => unreachable!("the method must be a function"),
+                };
+
+                if let Some(init) = init {
+                    self.apply(init, &args)?;
                 }
 
-                let inst = Value::Instance(Gc::new(value::Instance::new(class_ref.clone())));
-
-                Ok(inst)
+                Ok(inst_value)
             }
             _ => Err(LoxError::InvalidFunctionCall),
         }
+    }
+
+    fn apply(&mut self, fun_ref: Gc<value::Function>, args: &[Value]) -> Result<Value, LoxError> {
+        let fun = fun_ref.borrow();
+
+        if args.len() != fun.parameter_names.len() {
+            return Err(LoxError::WrongArity {
+                expected: fun.parameter_names.len(),
+                received: args.len(),
+            });
+        }
+        let fun_env = fun.environment.child();
+        for (name, value) in fun.parameter_names.iter().zip(args) {
+            fun_env.define(name, value.clone());
+        }
+
+        let StatementKind::Block(decls) = &fun.body.node else {
+            unreachable!("function bodies are always blocks");
+        };
+        let result = self.execute_block(decls, fun_env);
+
+        result
+            .map(|_| Value::Nil)
+            .or_else(|err| {
+                if let LoxError::Return(return_val) = err {
+                    Ok(return_val)
+                } else {
+                    Err(err)
+                }
+            })
+            .and_then(|val| {
+                if fun.is_initializer {
+                    fun.environment.get_at(0, "this")
+                } else {
+                    Ok(val)
+                }
+            })
     }
 
     /// Start a repl

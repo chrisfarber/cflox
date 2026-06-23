@@ -35,6 +35,7 @@ enum FunctionType {
     None,
     Function,
     Method,
+    Initializer,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -95,6 +96,12 @@ impl<'a> Resolver<'a> {
                     self.diagnostics
                         .push(Diagnostic::error(stmt, "Can't return from top-level code."))
                 }
+                if self.current_function == FunctionType::Initializer && expr.is_some() {
+                    self.diagnostics.push(Diagnostic::error(
+                        stmt,
+                        "Can't return a value from an initializer.",
+                    ))
+                }
                 if let Some(expr) = expr {
                     self.resolve_expression(expr);
                 }
@@ -147,7 +154,12 @@ impl<'a> Resolver<'a> {
 
         for meth in &klass.methods {
             let enclosing_function = self.current_function;
-            self.current_function = FunctionType::Method;
+
+            self.current_function = if meth.node.name == "init" {
+                FunctionType::Initializer
+            } else {
+                FunctionType::Method
+            };
             self.resolve_function(&meth.node);
             self.current_function = enclosing_function;
         }

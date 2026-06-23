@@ -114,6 +114,7 @@ pub struct Function {
     pub environment: Environment,
     pub parameter_names: Vec<String>,
     pub body: Box<Statement>,
+    pub is_initializer: bool,
 }
 
 impl Function {
@@ -128,6 +129,7 @@ impl Function {
             environment,
             parameter_names,
             body,
+            is_initializer: false,
         }
     }
 
@@ -135,11 +137,13 @@ impl Function {
         // this germany v ivory coast game is stressing me out too much to write good code
         let environment = self.environment.child();
         environment.define("this", to);
+        let is_initializer = self.name == "init";
         Self {
             name: self.name.clone(),
             environment,
             parameter_names: self.parameter_names.clone(),
             body: self.body.clone(),
+            is_initializer,
         }
     }
 }
@@ -158,11 +162,6 @@ pub struct Class {
 impl Class {
     pub fn new(name: String, methods: HashMap<String, Gc<Function>>) -> Self {
         Self { name, methods }
-    }
-
-    /// The arity of the constructor for the class
-    pub fn arity(&self) -> usize {
-        0
     }
 }
 
