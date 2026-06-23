@@ -163,10 +163,13 @@ impl Parser {
 
     pub fn parse_fun_declaration(&mut self) -> ParseDeclarationResult {
         let fun_tok = self.expect_token(TokenKind::Fun)?;
-        let mut fun = self.parse_fun_declaration()?;
-        fun.span.start = fun_tok.start;
+        let fun = self.parse_function()?;
 
-        Ok(fun)
+        Ok(Declaration::encapsulating(
+            fun_tok,
+            fun.span,
+            DeclarationKind::Function(fun.node),
+        ))
     }
 
     /// Parse a function body, but, without any particular leading token.
