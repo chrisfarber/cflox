@@ -23,4 +23,8 @@ pub enum LoxError {
     InvalidPropertyAcess,
     #[error("Undefined property {property:?}")]
     UndefinedProperty { property: String },
+    #[error("Superclass must be a class.")]
+    SuperclassMustBeClass,
+    #[error("an internal interpreter error occurred: {message:?}")]
+    InternalError { message: String },
 }

@@ -205,9 +205,16 @@ impl Parser {
     }
 
     pub fn parse_class_declaration(&mut self) -> ParseDeclarationResult {
-        let klass = self.expect_token(TokenKind::Class)?;
+        let class = self.expect_token(TokenKind::Class)?;
+
+        let mut superclass = None;
 
         let (klass_name_span, klass_name) = self.expect_identifier()?;
+        if self.peek_type() == Some(&TokenKind::Less) {
+            self.advance()?;
+            let (span, ident) = self.expect_identifier()?;
+            superclass = Some(Expression::new(span, ExpressionKind::Variable(ident)));
+        }
         self.expect_token(TokenKind::LeftBrace)?;
 
         let mut methods = vec![];
@@ -218,11 +225,12 @@ impl Parser {
 
         let end = self.expect_token(TokenKind::RightBrace)?;
         Ok(Declaration::encapsulating(
-            klass,
+            class,
             end,
             DeclarationKind::Class(Class {
                 name: klass_name,
                 name_span: klass_name_span,
+                superclass,
                 methods,
             }),
         ))
@@ -612,6 +620,15 @@ impl Parser {
             }
             TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
             TokenKind::This => wrap(ast::ExpressionKind::This),
+            TokenKind::Super => {
+                self.expect_token(TokenKind::Dot)?;
+                let (ident_span, name) = self.expect_identifier()?;
+                Ok(Expression::encapsulating(
+                    &next,
+                    ident_span,
+                    ExpressionKind::Super(name),
+                ))
+            }
             _ => Err(Diagnostic::error(&next, "unexpected token")),
         }
     }

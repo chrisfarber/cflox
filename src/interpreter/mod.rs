@@ -166,7 +166,23 @@ impl Interpreter {
     }
 
     pub fn execute_class_declaration(&mut self, class_decl: &Class) -> Result<(), LoxError> {
+        let superclass = if let Some(superclass_expr) = &class_decl.superclass {
+            match self.evaluate(superclass_expr)? {
+                Value::Class(super_class) => Some(super_class),
+                _ => Err(LoxError::SuperclassMustBeClass)?,
+            }
+        } else {
+            None
+        };
+
         self.environment.define(&class_decl.name, Value::Nil);
+
+        let enclosing_environment = self.environment.clone();
+        if let Some(super_gc) = &superclass {
+            self.environment = self.environment.child();
+            self.environment
+                .define("super", Value::Class(super_gc.clone()));
+        }
 
         let mut methods: HashMap<String, Gc<value::Function>> = HashMap::new();
         for func_node in &class_decl.methods {
@@ -174,7 +190,12 @@ impl Interpreter {
             methods.insert(func_node.node.name.to_owned(), fun);
         }
 
-        let class_val = Value::Class(Gc::new(value::Class::new(class_decl.name.clone(), methods)));
+        let class_val = Value::Class(Gc::new(value::Class::new(
+            class_decl.name.clone(),
+            superclass,
+            methods,
+        )));
+        self.environment = enclosing_environment;
         self.environment.assign(&class_decl.name, class_val)?;
         Ok(())
     }
@@ -187,6 +208,33 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
             ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
             ExpressionKind::This => self.evaluate_variable(expr, "this"),
+            ExpressionKind::Super(name) => {
+                let dist = self
+                    .resolutions
+                    .resolve(expr)
+                    .expect("super must have been resolved");
+                let superclass = self.environment.get_at(dist, "super")?;
+                let this = self.environment.get_at(dist - 1, "this")?;
+                let Value::Class(superclass) = superclass else {
+                    return Err(LoxError::InternalError {
+                        message: "somehow, implausibly, super was not a class".to_owned(),
+                    });
+                };
+                let Value::Instance(this) = this else {
+                    return Err(LoxError::InternalError {
+                        message: "somehow, implausibly, super's this was not an instance"
+                            .to_owned(),
+                    });
+                };
+                let Some(fun) = superclass.borrow().get_method(name) else {
+                    return Err(LoxError::UndefinedProperty {
+                        property: name.to_owned(),
+                    });
+                };
+                Ok(Value::Function(Gc::new(
+                    fun.borrow().bind(Value::Instance(this)),
+                )))
+            }
             ExpressionKind::Variable(ident) => self.evaluate_variable(expr, ident),
             ExpressionKind::Assign(ident, inner) => {
                 let value = self.evaluate(inner)?;

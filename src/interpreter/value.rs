@@ -156,12 +156,29 @@ impl fmt::Debug for Function {
 
 pub struct Class {
     pub name: String,
+    pub superclass: Option<Gc<Class>>,
     pub methods: HashMap<String, Gc<Function>>,
 }
 
 impl Class {
-    pub fn new(name: String, methods: HashMap<String, Gc<Function>>) -> Self {
-        Self { name, methods }
+    pub fn new(
+        name: String,
+        superclass: Option<Gc<Class>>,
+        methods: HashMap<String, Gc<Function>>,
+    ) -> Self {
+        Self {
+            name,
+            superclass,
+            methods,
+        }
+    }
+
+    pub fn get_method(&self, field: &str) -> Option<Gc<Function>> {
+        self.methods.get(field).cloned().or_else(|| {
+            self.superclass
+                .clone()
+                .and_then(|superclass| superclass.borrow().get_method(field))
+        })
     }
 }
 
@@ -196,8 +213,7 @@ impl Instance {
     pub fn get_method(&self, field: &str, this: Value) -> Option<Value> {
         let class = self.class.borrow();
         class
-            .methods
-            .get(field)
+            .get_method(field)
             .map(|f| Value::Function(Gc::new(f.borrow().bind(this))))
     }
 

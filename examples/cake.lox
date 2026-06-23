@@ -9,9 +9,16 @@ class Cake {
     }
 }
 
+class AlsoCake < Cake {
+    taste() {
+        super.taste();
+        print "very nice!";
+    }
+}
+
 var cake = Cake();
 cake.flavor = "German chocolate";
 cake.taste(); // Prints "The German chocolate cake is delicious!".
 
-var boring_cake = Cake();
+var boring_cake = AlsoCake();
 boring_cake.taste();

@@ -42,6 +42,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    Subclass,
 }
 
 #[derive(Debug)]
@@ -146,6 +147,29 @@ impl<'a> Resolver<'a> {
         self.declare(span, &klass.name);
         self.define(&klass.name);
 
+        let mut has_super = false;
+        if let Some(superclass) = &klass.superclass {
+            if let ExpressionKind::Variable(super_name) = &superclass.node
+                && super_name == &klass.name
+            {
+                self.diagnostics.push(Diagnostic::error(
+                    superclass,
+                    "A class can't inherit from itself",
+                ))
+            }
+            self.current_class = ClassType::Subclass;
+            self.resolve_expression(superclass);
+            has_super = true;
+        }
+
+        if has_super {
+            self.begin_scope();
+            self.scopes
+                .last_mut()
+                .expect("super scope")
+                .insert("super".to_owned(), true);
+        }
+
         self.begin_scope();
         self.scopes
             .last_mut()
@@ -165,6 +189,9 @@ impl<'a> Resolver<'a> {
         }
 
         self.end_scope();
+        if has_super {
+            self.end_scope();
+        }
         self.current_class = enclosing_type;
     }
 
@@ -243,6 +270,20 @@ impl<'a> Resolver<'a> {
                     return;
                 }
                 self.resolve_local(expr, "this");
+            }
+            ExpressionKind::Super(_) => {
+                match self.current_class {
+                    ClassType::None => self.diagnostics.push(Diagnostic::error(
+                        expr.span,
+                        "Can't use 'super' outside of a class.",
+                    )),
+                    ClassType::Class => self.diagnostics.push(Diagnostic::error(
+                        expr.span,
+                        "Can't use 'super' in a class with no superclass.",
+                    )),
+                    _ => {}
+                }
+                self.resolve_local(expr, "super");
             }
         }
     }

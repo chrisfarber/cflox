@@ -22,6 +22,7 @@ pub enum ExpressionKind {
     Get(Box<Expression>, String),
     Set(Box<Expression>, String, Box<Expression>),
     This,
+    Super(String),
 }
 
 pub type Expression = Node<ExpressionKind>;
@@ -82,9 +83,14 @@ pub struct Function {
 pub struct Class {
     pub name: String,
     pub name_span: Span,
-    // Unsure whether this is a good approach. Could opt for
-    // a vec of declarations instead, but, this would
-    // enable the construction of invalid ASTs
+    // it's super awkward to me that I'll have to reconstruct an
+    // Expression::Variable(superclass) in order to evaluate it. Right now
+    // I'm thinking it's the lesser evil when compared to allowing the construction
+    // of an invalid AST?
+    // pub superclass: Option<(Span, String)>,
+    //
+    // okay i changed my mind:
+    pub superclass: Option<Expression>,
     pub methods: Vec<Node<Function>>,
 }
 
