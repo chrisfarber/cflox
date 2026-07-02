@@ -1,30 +1,10 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::parser::span::Span;
+
 static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
 
 pub type NodeId = u64;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    #[allow(dead_code)]
-    pub fn in_source<'a>(&self, source: &'a str) -> &'a str {
-        &source[self.start..self.end]
-    }
-}
-
-impl From<usize> for Span {
-    fn from(size: usize) -> Span {
-        Span {
-            start: size,
-            end: size,
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {

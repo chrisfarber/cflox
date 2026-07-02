@@ -5,7 +5,8 @@ use crate::parser::{
     },
     diagnostic::Diagnostic,
     lexing::scan,
-    node::{Node, Span},
+    node::Node,
+    span::Span,
     token::{Token, TokenKind},
 };
 
@@ -13,6 +14,7 @@ pub mod ast;
 pub mod diagnostic;
 pub mod lexing;
 pub mod node;
+pub mod span;
 pub mod token;
 
 struct Parser {

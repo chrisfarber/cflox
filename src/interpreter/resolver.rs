@@ -6,7 +6,8 @@ use crate::parser::{
         StatementKind, Unary,
     },
     diagnostic::Diagnostic,
-    node::{Node, NodeId, Span},
+    node::{Node, NodeId},
+    span::Span,
 };
 
 #[derive(Debug)]

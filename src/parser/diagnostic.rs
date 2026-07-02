@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::parser::node::Span;
+use crate::parser::span::Span;
 
 /// How severe is a diagnostic?
 #[allow(dead_code)]

@@ -1,4 +1,4 @@
-use crate::parser::node::{Node, Span};
+use crate::parser::{node::Node, span::Span};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
