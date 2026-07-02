@@ -242,6 +242,8 @@ mod test_conversions {
                     ident,
                     Box::new(right.strip_spans()),
                 ),
+                ExpressionKind::Super(s) => ExpressionKind::Super(s),
+                ExpressionKind::This => ExpressionKind::This,
             };
             Node::untracked(node)
         }
