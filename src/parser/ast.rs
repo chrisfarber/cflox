@@ -4,9 +4,7 @@ use crate::parser::{node::Node, span::Span};
 pub enum Literal {
     Number(f64),
     String(String),
-    // TODO should this be Bool(bool) ?
-    True,
-    False,
+    Bool(bool),
     Nil,
 }
 
@@ -15,17 +13,66 @@ pub enum ExpressionKind {
     Literal(Literal),
     Unary(Unary),
     Binary(Binary),
-    Variable(String),
-    Assign(String, Box<Expression>),
+    Variable(Span),
+    Assign(Assign),
     Logical(Logical),
-    Call(Box<Expression>, Vec<Expression>),
-    Get(Box<Expression>, String),
-    Set(Box<Expression>, String, Box<Expression>),
+    Call(Call),
+    Get(Get),
+    Set(Set),
     This,
-    Super(String),
+    Super(Span),
 }
 
 pub type Expression = Node<ExpressionKind>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assign {
+    pub target: Span,
+    pub value: Box<Expression>,
+}
+
+impl From<Assign> for ExpressionKind {
+    fn from(a: Assign) -> ExpressionKind {
+        ExpressionKind::Assign(a)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    pub callee: Box<Expression>,
+    pub arguments: Vec<Expression>,
+}
+
+impl From<Call> for ExpressionKind {
+    fn from(c: Call) -> ExpressionKind {
+        ExpressionKind::Call(c)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Get {
+    pub object: Box<Expression>,
+    pub name: Span,
+}
+
+impl From<Get> for ExpressionKind {
+    fn from(g: Get) -> ExpressionKind {
+        ExpressionKind::Get(g)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Set {
+    pub object: Box<Expression>,
+    pub name: Span,
+    pub value: Box<Expression>,
+}
+
+impl From<Set> for ExpressionKind {
+    fn from(s: Set) -> ExpressionKind {
+        ExpressionKind::Set(s)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
@@ -33,15 +80,33 @@ pub enum StatementKind {
     Print(Expression),
     Return(Option<Expression>),
     Block(Vec<Declaration>),
-    If {
-        condition: Expression,
-        then_branch: Box<Statement>,
-        else_branch: Option<Box<Statement>>,
-    },
-    While {
-        condition: Expression,
-        body: Box<Statement>,
-    },
+    If(If),
+    While(While),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct If {
+    pub condition: Expression,
+    pub then_branch: Box<Statement>,
+    pub else_branch: Option<Box<Statement>>,
+}
+
+impl From<If> for StatementKind {
+    fn from(i: If) -> StatementKind {
+        StatementKind::If(i)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct While {
+    pub condition: Expression,
+    pub body: Box<Statement>,
+}
+
+impl From<While> for StatementKind {
+    fn from(w: While) -> StatementKind {
+        StatementKind::While(w)
+    }
 }
 
 impl From<Vec<Declaration>> for Statement {
@@ -61,35 +126,35 @@ pub type Statement = Node<StatementKind>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeclarationKind {
     Statement(Statement),
-    Var {
-        identifier: String,
-        initial: Option<Expression>,
-    },
+    Var(Var),
     Function(Function),
     Class(Class),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Var {
+    pub identifier: Span,
+    pub initial: Option<Expression>,
+}
+
+impl From<Var> for DeclarationKind {
+    fn from(v: Var) -> DeclarationKind {
+        DeclarationKind::Var(v)
+    }
 }
 
 pub type Declaration = Node<DeclarationKind>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
-    pub name: String,
-    pub name_span: Span,
-    pub parameter_names: Vec<(Span, String)>,
+    pub name: Span,
+    pub parameter_names: Vec<Span>,
     pub body: Box<Statement>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
-    pub name: String,
-    pub name_span: Span,
-    // it's super awkward to me that I'll have to reconstruct an
-    // Expression::Variable(superclass) in order to evaluate it. Right now
-    // I'm thinking it's the lesser evil when compared to allowing the construction
-    // of an invalid AST?
-    // pub superclass: Option<(Span, String)>,
-    //
-    // okay i changed my mind:
+    pub name: Span,
     pub superclass: Option<Expression>,
     pub methods: Vec<Node<Function>>,
 }
@@ -117,17 +182,15 @@ impl From<Literal> for ExpressionKind {
 
 impl From<bool> for ExpressionKind {
     fn from(b: bool) -> ExpressionKind {
-        match b {
-            true => Literal::True,
-            false => Literal::False,
-        }
-        .into()
+        Literal::Bool(b).into()
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Unary {
+    /// negate the sign of a number
     Negate(Box<Expression>),
+    /// logical (boolean) not operation
     Not(Box<Expression>),
 }
 
@@ -204,48 +267,6 @@ mod test_conversions {
                 right: Box::new(right),
                 operator,
             }
-        }
-    }
-
-    impl Expression {
-        /// Recursively zeros out all spans, for comparison in tests.
-        pub fn strip_spans(self) -> Self {
-            let node = match self.node {
-                ExpressionKind::Literal(l) => ExpressionKind::Literal(l),
-                ExpressionKind::Unary(u) => ExpressionKind::Unary(match u {
-                    Unary::Negate(inner) => Unary::Negate(Box::new(inner.strip_spans())),
-                    Unary::Not(inner) => Unary::Not(Box::new(inner.strip_spans())),
-                }),
-                ExpressionKind::Binary(b) => ExpressionKind::Binary(Binary {
-                    left: Box::new(b.left.strip_spans()),
-                    operator: b.operator,
-                    right: Box::new(b.right.strip_spans()),
-                }),
-                ExpressionKind::Logical(l) => ExpressionKind::Logical(Logical {
-                    left: Box::new(l.left.strip_spans()),
-                    operator: l.operator,
-                    right: Box::new(l.right.strip_spans()),
-                }),
-                ExpressionKind::Variable(ident) => ExpressionKind::Variable(ident),
-                ExpressionKind::Assign(ident, inner) => {
-                    ExpressionKind::Assign(ident, Box::new(inner.strip_spans()))
-                }
-                ExpressionKind::Call(callee, args) => ExpressionKind::Call(
-                    Box::new(callee.strip_spans()),
-                    args.into_iter().map(|a| a.strip_spans()).collect(),
-                ),
-                ExpressionKind::Get(expr, ident) => {
-                    ExpressionKind::Get(Box::new(expr.strip_spans()), ident)
-                }
-                ExpressionKind::Set(left, ident, right) => ExpressionKind::Set(
-                    Box::new(left.strip_spans()),
-                    ident,
-                    Box::new(right.strip_spans()),
-                ),
-                ExpressionKind::Super(s) => ExpressionKind::Super(s),
-                ExpressionKind::This => ExpressionKind::This,
-            };
-            Node::untracked(node)
         }
     }
 

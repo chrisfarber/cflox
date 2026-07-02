@@ -205,8 +205,7 @@ impl Interpreter {
             ExpressionKind::Literal(Literal::Nil) => Ok(Value::Nil),
             ExpressionKind::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
-            ExpressionKind::Literal(Literal::True) => Ok(Value::Boolean(true)),
-            ExpressionKind::Literal(Literal::False) => Ok(Value::Boolean(false)),
+            ExpressionKind::Literal(Literal::Bool(bool)) => Ok(Value::Boolean(*bool)),
             ExpressionKind::This => self.evaluate_variable(expr, "this"),
             ExpressionKind::Super(name) => {
                 let dist = self

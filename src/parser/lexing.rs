@@ -4,12 +4,15 @@ use crate::parser::{
     token::{Token, TokenKind},
 };
 
-struct Scanner {
+struct Scanner<'a> {
     // unsure whether this will be needed:
     // name: String,
-    pub source: Vec<char>,
+    pub source: &'a str,
     pub tokens: Vec<Token>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Byte offset into `source`, not a char index -- must always land on a
+    /// char boundary, which holds as long as `advance()` is the only thing
+    /// that moves it.
     current: usize,
     /// When building up a token, it may encapsulate multiple chars from the
     /// source. This field is used to keep track of the start of the token
@@ -19,9 +22,8 @@ struct Scanner {
 
 pub type ScanResult = (Vec<Token>, Vec<Diagnostic>);
 
-impl Scanner {
-    pub fn new(source_str: &str) -> Self {
-        let source = source_str.chars().collect();
+impl<'a> Scanner<'a> {
+    pub fn new(source: &'a str) -> Self {
         Self {
             source,
             current: 0,
@@ -102,7 +104,7 @@ impl Scanner {
                         // Consume the rest of the line. Stop at the newline or
                         // at end-of-input -- peek() returns None at EOF, and
                         // advancing past it would spin forever.
-                        while self.peek().is_some_and(|c| *c != '\n') {
+                        while self.peek().is_some_and(|c| c != '\n') {
                             self.advance();
                         }
                     } else {
@@ -117,7 +119,7 @@ impl Scanner {
                     let mut content_end = content_start;
                     loop {
                         if let Some(n) = self.advance() {
-                            if *n == '"' {
+                            if n == '"' {
                                 break;
                             }
                             content_end = self.current;
@@ -131,14 +133,14 @@ impl Scanner {
                         }
                     }
                     self.push_token(TokenKind::String(
-                        self.source[content_start..content_end].iter().collect(),
+                        self.source[content_start..content_end].to_owned(),
                     ));
                 }
                 other => {
                     if other.is_ascii_digit() {
                         let mut saw_dot = false;
                         while let Some(c) = self.peek() {
-                            if *c == '.' {
+                            if c == '.' {
                                 if saw_dot {
                                     break;
                                 } else {
@@ -151,19 +153,17 @@ impl Scanner {
                         }
                         self.push_token(TokenKind::Number(
                             self.source[start..self.current]
-                                .iter()
-                                .collect::<String>()
                                 .parse()
                                 .expect("didn't we prove this could parse"),
                         ));
                     } else if other.is_alphabetic() {
                         while let Some(c) = self.peek()
-                            && (c.is_alphabetic() || *c == '_' || c.is_ascii_digit())
+                            && (c.is_alphabetic() || c == '_' || c.is_ascii_digit())
                         {
                             self.advance();
                         }
-                        let ident: String = self.source[start..self.current].iter().collect();
-                        self.push_token(match ident.as_str() {
+                        let ident: &str = &self.source[start..self.current];
+                        self.push_token(match ident {
                             "and" => TokenKind::And,
                             "class" => TokenKind::Class,
                             "else" => TokenKind::Else,
@@ -180,7 +180,7 @@ impl Scanner {
                             "true" => TokenKind::True,
                             "var" => TokenKind::Var,
                             "while" => TokenKind::While,
-                            _ => TokenKind::Identifier(ident),
+                            _ => TokenKind::Identifier,
                         });
                     } else {
                         let msg = format!("unexpected input char: '{}'", other);
@@ -192,23 +192,21 @@ impl Scanner {
         }
     }
 
-    pub fn advance(&mut self) -> Option<&char> {
-        let c = self.source.get(self.current);
-        if self.current < self.source.len() {
-            self.current += 1;
-        }
-        c
+    pub fn advance(&mut self) -> Option<char> {
+        let c = self.peek()?;
+        self.current += c.len_utf8();
+        Some(c)
     }
 
-    pub fn peek(&self) -> Option<&char> {
-        self.source.get(self.current)
+    pub fn peek(&self) -> Option<char> {
+        self.source[self.current..].chars().next()
     }
 
     /// Is the next char the expected char?
     /// If so, advances and returns true. Otherwise, returns false.
     pub fn match_next(&mut self, expected: char) -> bool {
-        if self.source.get(self.current) == Some(&expected) {
-            self.current += 1;
+        if self.peek() == Some(expected) {
+            self.current += expected.len_utf8();
             true
         } else {
             false

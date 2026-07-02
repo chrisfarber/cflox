@@ -1,4 +1,4 @@
-use crate::parser::node::Spanned;
+use crate::parser::span::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -23,7 +23,7 @@ pub enum TokenKind {
     LessEqual,
 
     // Literals:
-    Identifier(String),
+    Identifier,
     String(String),
     Number(f64),
 
@@ -46,4 +46,8 @@ pub enum TokenKind {
     While,
 }
 
-pub type Token = Spanned<TokenKind>;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}

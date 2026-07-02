@@ -402,7 +402,7 @@ impl Parser {
                 self.advance()?;
                 Expression::new(
                     self.current_span(),
-                    ExpressionKind::Literal(ast::Literal::True),
+                    ExpressionKind::Literal(ast::Literal::Bool(true)),
                 )
             }
             _ => {
@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn parse_unary() {
         let mut parser = parser_from_str("!(-10)");
-        let expr1 = parser.parse_unary().unwrap().strip_spans();
+        let expr1 = parser.parse_unary().unwrap();
         assert_eq!(
             expr1,
             Unary::not(Unary::negate(Literal::Number(10.0).into()).into()).into()
