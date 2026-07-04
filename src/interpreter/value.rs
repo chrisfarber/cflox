@@ -115,6 +115,12 @@ pub struct Function {
     pub parameter_names: Vec<String>,
     pub body: Box<Statement>,
     pub is_initializer: bool,
+    /// The source text this function was parsed from. Needed because the
+    /// function's `body` only holds `Span`s (byte offsets), and the function
+    /// may be called from a later `Interpreter::run()` invocation -- e.g. a
+    /// REPL line after the one that defined it -- whose own source string
+    /// wouldn't resolve those spans correctly.
+    pub source: Rc<str>,
 }
 
 impl Function {
@@ -123,6 +129,7 @@ impl Function {
         environment: Environment,
         parameter_names: Vec<String>,
         body: Box<Statement>,
+        source: Rc<str>,
     ) -> Self {
         Self {
             name,
@@ -130,6 +137,7 @@ impl Function {
             parameter_names,
             body,
             is_initializer: false,
+            source,
         }
     }
 
@@ -144,6 +152,7 @@ impl Function {
             parameter_names: self.parameter_names.clone(),
             body: self.body.clone(),
             is_initializer,
+            source: self.source.clone(),
         }
     }
 }

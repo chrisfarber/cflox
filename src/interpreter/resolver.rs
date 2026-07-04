@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::parser::{
     ast::{
-        Class, Declaration, DeclarationKind, Expression, ExpressionKind, Function, Statement,
-        StatementKind, Unary,
+        Assign, Call, Class, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
+        Get, If, Set, Statement, StatementKind, Unary, Var, While,
     },
     diagnostic::Diagnostic,
     node::{Node, NodeId},
@@ -49,6 +49,7 @@ enum ClassType {
 #[derive(Debug)]
 struct Resolver<'a> {
     mapping: &'a mut Resolutions,
+    source: &'a str,
     scopes: Vec<HashMap<String, bool>>,
     current_function: FunctionType,
     current_class: ClassType,
@@ -56,9 +57,10 @@ struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(resolutions: &'a mut Resolutions) -> Self {
+    pub fn new(resolutions: &'a mut Resolutions, source: &'a str) -> Self {
         Self {
             mapping: resolutions,
+            source,
             scopes: vec![],
             current_function: FunctionType::None,
             current_class: ClassType::None,
@@ -81,10 +83,10 @@ impl<'a> Resolver<'a> {
             DeclarationKind::Statement(stmt) => self.resolve_statement(stmt),
             DeclarationKind::Function(fdecl) => self.resolve_function_declaration(decl.span, fdecl),
             DeclarationKind::Class(klass) => self.resolve_class_declaration(decl.span, klass),
-            DeclarationKind::Var {
+            DeclarationKind::Var(Var {
                 identifier,
                 initial,
-            } => self.resolve_var_declaration(decl.span, identifier, initial),
+            }) => self.resolve_var_declaration(decl.span, *identifier, initial),
         }
     }
 
@@ -108,15 +110,15 @@ impl<'a> Resolver<'a> {
                     self.resolve_expression(expr);
                 }
             }
-            StatementKind::While { condition, body } => {
+            StatementKind::While(While { condition, body }) => {
                 self.resolve_expression(condition);
                 self.resolve_statement(body);
             }
-            StatementKind::If {
+            StatementKind::If(If {
                 condition,
                 then_branch,
                 else_branch,
-            } => {
+            }) => {
                 self.resolve_expression(condition);
                 self.resolve_statement(then_branch);
                 if let Some(else_stm) = else_branch {
@@ -133,8 +135,9 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_function_declaration(&mut self, span: Span, fdecl: &Function) {
-        self.declare(span, &fdecl.name);
-        self.define(&fdecl.name);
+        let name = fdecl.name.in_source(self.source);
+        self.declare(span, name);
+        self.define(name);
 
         let enclosing_function = self.current_function;
         self.current_function = FunctionType::Function;
@@ -145,13 +148,14 @@ impl<'a> Resolver<'a> {
     fn resolve_class_declaration(&mut self, span: Span, klass: &Class) {
         let enclosing_type = self.current_class;
         self.current_class = ClassType::Class;
-        self.declare(span, &klass.name);
-        self.define(&klass.name);
+        let class_name = klass.name.in_source(self.source);
+        self.declare(span, class_name);
+        self.define(class_name);
 
         let mut has_super = false;
         if let Some(superclass) = &klass.superclass {
-            if let ExpressionKind::Variable(super_name) = &superclass.node
-                && super_name == &klass.name
+            if let ExpressionKind::Variable(super_span) = &superclass.node
+                && super_span.in_source(self.source) == class_name
             {
                 self.diagnostics.push(Diagnostic::error(
                     superclass,
@@ -180,7 +184,7 @@ impl<'a> Resolver<'a> {
         for meth in &klass.methods {
             let enclosing_function = self.current_function;
 
-            self.current_function = if meth.node.name == "init" {
+            self.current_function = if meth.node.name.in_source(self.source) == "init" {
                 FunctionType::Initializer
             } else {
                 FunctionType::Method
@@ -198,9 +202,10 @@ impl<'a> Resolver<'a> {
 
     fn resolve_function(&mut self, func: &Function) {
         self.begin_scope();
-        for (param_span, param) in &func.parameter_names {
-            self.declare(*param_span, param);
-            self.define(param);
+        for param_span in &func.parameter_names {
+            let param_name = param_span.in_source(self.source);
+            self.declare(*param_span, param_name);
+            self.define(param_name);
         }
         let StatementKind::Block(decls) = &func.body.node else {
             unreachable!("function bodies are always blocks");
@@ -212,36 +217,38 @@ impl<'a> Resolver<'a> {
     fn resolve_var_declaration(
         &mut self,
         span: Span,
-        identifier: &str,
+        identifier: Span,
         initial: &Option<Expression>,
     ) {
-        self.declare(span, identifier);
+        let name = identifier.in_source(self.source);
+        self.declare(span, name);
         if let Some(initializer) = initial {
             self.resolve_expression(initializer);
         }
-        self.define(identifier);
+        self.define(name);
     }
 
     fn resolve_expression(&mut self, expr: &Expression) {
         match &expr.node {
-            ExpressionKind::Variable(ident) => {
+            ExpressionKind::Variable(ident_span) => {
+                let name = ident_span.in_source(self.source);
                 if let Some(scope) = self.scopes.last()
-                    && scope.get(ident) == Some(&false)
+                    && scope.get(name) == Some(&false)
                 {
                     self.diagnostics.push(Diagnostic::error(
                         expr.span,
                         "Can't read local variable in its own initializer.",
                     ));
                 }
-                self.resolve_local(expr, ident);
-            }
-            ExpressionKind::Assign(name, value_expr) => {
-                self.resolve_expression(value_expr);
                 self.resolve_local(expr, name);
             }
-            ExpressionKind::Call(callee, args) => {
+            ExpressionKind::Assign(Assign { target, value }) => {
+                self.resolve_expression(value);
+                self.resolve_local(expr, target.in_source(self.source));
+            }
+            ExpressionKind::Call(Call { callee, arguments }) => {
                 self.resolve_expression(callee);
-                self.resolve_expressions(args);
+                self.resolve_expressions(arguments);
             }
             ExpressionKind::Logical(logical) => {
                 self.resolve_expression(&logical.left);
@@ -255,12 +262,12 @@ impl<'a> Resolver<'a> {
                 Unary::Negate(expr) | Unary::Not(expr) => self.resolve_expression(expr),
             },
             ExpressionKind::Literal(_) => {}
-            ExpressionKind::Get(expr, _ident) => {
-                self.resolve_expression(expr);
+            ExpressionKind::Get(Get { object, .. }) => {
+                self.resolve_expression(object);
             }
-            ExpressionKind::Set(left, _, right) => {
-                self.resolve_expression(left);
-                self.resolve_expression(right);
+            ExpressionKind::Set(Set { object, value, .. }) => {
+                self.resolve_expression(object);
+                self.resolve_expression(value);
             }
             ExpressionKind::This => {
                 if self.current_class != ClassType::Class {
@@ -334,8 +341,12 @@ impl<'a> Resolver<'a> {
     }
 }
 
-pub fn resolve(resolutions: &mut Resolutions, program: &[Declaration]) -> Vec<Diagnostic> {
-    let mut resolver = Resolver::new(resolutions);
+pub fn resolve(
+    resolutions: &mut Resolutions,
+    program: &[Declaration],
+    source: &str,
+) -> Vec<Diagnostic> {
+    let mut resolver = Resolver::new(resolutions, source);
     resolver.resolve(program);
     resolver.diagnostics
 }
@@ -376,7 +387,7 @@ mod tests {
         assert!(!has_error(&diags), "{diags:?}");
 
         let mut resolutions = Resolutions::new();
-        let res_diags = resolve(&mut resolutions, &decls);
+        let res_diags = resolve(&mut resolutions, &decls, source);
         assert!(res_diags.is_empty(), "{res_diags:?}");
 
         // decls[0] is the outer block; its second decl is the inner block;

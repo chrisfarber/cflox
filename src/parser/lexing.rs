@@ -45,7 +45,7 @@ impl<'a> Scanner<'a> {
     /// Given a token type, build a Token
     fn push_token(&mut self, kind: TokenKind) {
         let span = self.current_span();
-        let token = Token { span, node: kind };
+        let token = Token { span, kind };
         self.tokens.push(token);
     }
 
@@ -261,7 +261,7 @@ mod tests {
         let (tokens, _) = scan("   \"hello \" ");
         let token = &tokens[0];
         assert_eq!(token.span, Span { start: 3, end: 11 });
-        assert_eq!(token.node, TokenKind::String("hello ".into()));
+        assert_eq!(token.kind, TokenKind::String("hello ".into()));
     }
 
     #[test]
@@ -286,7 +286,7 @@ true
         let (tokens, diagnostics) = scan("1 // end");
         assert!(diagnostics.is_empty());
         assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].node, TokenKind::Number(1.0));
+        assert_eq!(tokens[0].kind, TokenKind::Number(1.0));
     }
 
     #[test]
@@ -300,6 +300,6 @@ true
         assert_eq!(diag.span.in_source(source), "\"a string that never ends ");
 
         let last_token = tokens.last().unwrap();
-        assert_eq!(last_token.node, TokenKind::Plus);
+        assert_eq!(last_token.kind, TokenKind::Plus);
     }
 }

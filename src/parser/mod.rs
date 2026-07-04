@@ -1,7 +1,7 @@
 use crate::parser::{
     ast::{
-        Binary, BinaryOp, Class, Declaration, DeclarationKind, Expression, ExpressionKind,
-        Function, Logical, Statement, StatementKind,
+        Assign, Binary, BinaryOp, Call, Class, Declaration, DeclarationKind, Expression,
+        ExpressionKind, Function, Get, If, Logical, Set, Statement, StatementKind, Var, While,
     },
     diagnostic::Diagnostic,
     lexing::scan,
@@ -75,15 +75,15 @@ impl Parser {
     }
 
     fn peek_type(&self) -> Option<&TokenKind> {
-        self.peek().map(|t| &t.node)
+        self.peek().map(|t| &t.kind)
     }
 
     fn expect_token(&mut self, expected: TokenKind) -> Result<Span, Diagnostic> {
         let tok = self.advance()?;
-        if tok.node == expected {
+        if tok.kind == expected {
             Ok(tok.span)
         } else {
-            let msg = format!("expected token {:?}, found {:?}", expected, tok.node);
+            let msg = format!("expected token {:?}, found {:?}", expected, tok.kind);
             Err(Diagnostic::error(&tok, msg))
         }
     }
@@ -115,10 +115,10 @@ impl Parser {
         res
     }
 
-    fn expect_identifier(&mut self) -> Result<(Span, String), Diagnostic> {
+    fn expect_identifier(&mut self) -> Result<Span, Diagnostic> {
         let tok = self.advance()?;
-        if let TokenKind::Identifier(s) = &tok.node {
-            Ok((tok.span, s.clone()))
+        if tok.kind == TokenKind::Identifier {
+            Ok(tok.span)
         } else {
             Err(Diagnostic::error(tok.span, "expected an identifier"))
         }
@@ -179,13 +179,13 @@ impl Parser {
     /// so that it may be used both for parsing functions (`parse_fun_declaration`)
     /// and for class methods.
     pub fn parse_function(&mut self) -> Result<Node<Function>, Diagnostic> {
-        let (fun_name_span, fun_name) = self.expect_identifier()?;
+        let name = self.expect_identifier()?;
         let mut parameter_names = vec![];
 
         self.expect_token(TokenKind::LeftParen)?;
-        while let Some(TokenKind::Identifier(_)) = self.peek_type() {
-            let (param_span, param_name) = self.expect_identifier()?;
-            parameter_names.push((param_span, param_name));
+        while self.peek_type() == Some(&TokenKind::Identifier) {
+            let param_span = self.expect_identifier()?;
+            parameter_names.push(param_span);
 
             if self.peek_type() == Some(&TokenKind::Comma) {
                 self.advance()?;
@@ -198,11 +198,10 @@ impl Parser {
         let body = self.parse_block_statement()?;
 
         Ok(Node::encapsulating(
-            fun_name_span,
+            name,
             body.span,
             Function {
-                name_span: fun_name_span,
-                name: fun_name,
+                name,
                 parameter_names,
                 body: Box::new(body),
             },
@@ -214,16 +213,16 @@ impl Parser {
 
         let mut superclass = None;
 
-        let (klass_name_span, klass_name) = self.expect_identifier()?;
+        let klass_name_span = self.expect_identifier()?;
         if self.peek_type() == Some(&TokenKind::Less) {
             self.advance()?;
-            let (span, ident) = self.expect_identifier()?;
-            superclass = Some(Expression::new(span, ExpressionKind::Variable(ident)));
+            let span = self.expect_identifier()?;
+            superclass = Some(Expression::new(span, ExpressionKind::Variable(span)));
         }
         self.expect_token(TokenKind::LeftBrace)?;
 
         let mut methods = vec![];
-        while let Some(TokenKind::Identifier(_)) = self.peek_type() {
+        while self.peek_type() == Some(&TokenKind::Identifier) {
             let fun = self.parse_function()?;
             methods.push(fun);
         }
@@ -233,8 +232,7 @@ impl Parser {
             class,
             end,
             DeclarationKind::Class(Class {
-                name: klass_name,
-                name_span: klass_name_span,
+                name: klass_name_span,
                 superclass,
                 methods,
             }),
@@ -244,30 +242,30 @@ impl Parser {
     pub fn parse_var_declaration(&mut self) -> ParseDeclarationResult {
         let start = self.expect_token(TokenKind::Var)?.start;
 
-        let (_, identifier) = self.expect_identifier()?;
+        let identifier = self.expect_identifier()?;
 
         let next_tok = self.advance()?;
-        match next_tok.node {
+        match next_tok.kind {
             TokenKind::Equal => {
                 let expr = self.parse_expression()?;
                 let semi = self.expect_token(TokenKind::Semicolon)?;
                 let end = semi.end;
                 Ok(Declaration::new(
                     Span { start, end },
-                    DeclarationKind::Var {
+                    DeclarationKind::Var(Var {
                         identifier,
                         initial: Some(expr),
-                    },
+                    }),
                 ))
             }
             TokenKind::Semicolon => {
                 let end = next_tok.span.end;
                 Ok(Declaration::new(
                     Span { start, end },
-                    DeclarationKind::Var {
+                    DeclarationKind::Var(Var {
                         identifier,
                         initial: None,
-                    },
+                    }),
                 ))
             }
             _ => Err(Diagnostic::error(
@@ -358,11 +356,11 @@ impl Parser {
 
         Ok(Statement::new(
             Span { start, end },
-            StatementKind::If {
+            StatementKind::If(If {
                 condition,
                 then_branch,
                 else_branch,
-            },
+            }),
         ))
     }
 
@@ -376,10 +374,10 @@ impl Parser {
         Ok(Statement::encapsulating(
             while_span,
             body.span,
-            StatementKind::While {
+            StatementKind::While(While {
                 condition,
                 body: Box::new(body),
-            },
+            }),
         ))
     }
 
@@ -432,10 +430,10 @@ impl Parser {
         let while_stmt: Statement = Statement::encapsulating(
             for_span,
             body.span,
-            StatementKind::While {
+            StatementKind::While(While {
                 condition,
                 body: Box::new(body),
-            },
+            }),
         );
         block.push(while_stmt.into());
 
@@ -453,15 +451,22 @@ impl Parser {
             self.advance()?;
             let value = self.parse_assignment()?;
             match expr.node {
-                ExpressionKind::Variable(ident) => Ok(Expression::encapsulating(
+                ExpressionKind::Variable(target) => Ok(Expression::encapsulating(
                     expr.span,
                     value.span,
-                    ExpressionKind::Assign(ident, Box::new(value)),
+                    ExpressionKind::Assign(Assign {
+                        target,
+                        value: Box::new(value),
+                    }),
                 )),
-                ExpressionKind::Get(object, ident) => Ok(Expression::encapsulating(
+                ExpressionKind::Get(Get { object, name }) => Ok(Expression::encapsulating(
                     expr.span,
                     value.span,
-                    ExpressionKind::Set(object, ident, Box::new(value)),
+                    ExpressionKind::Set(Set {
+                        object,
+                        name,
+                        value: Box::new(value),
+                    }),
                 )),
                 _ => Err(Diagnostic::error(expr.span, "Invalid assignment target")),
             }
@@ -565,11 +570,14 @@ impl Parser {
                 }
                 Some(TokenKind::Dot) => {
                     self.expect_token(TokenKind::Dot)?;
-                    let (field_name_span, field_name) = self.expect_identifier()?;
+                    let field_name_span = self.expect_identifier()?;
                     expr = Expression::encapsulating(
                         expr.span,
                         field_name_span,
-                        ExpressionKind::Get(Box::new(expr), field_name),
+                        ExpressionKind::Get(Get {
+                            object: Box::new(expr),
+                            name: field_name_span,
+                        }),
                     )
                 }
                 _ => break,
@@ -605,14 +613,17 @@ impl Parser {
         Ok(Expression::encapsulating(
             callee.span,
             end,
-            ExpressionKind::Call(Box::new(callee), arguments),
+            ExpressionKind::Call(Call {
+                callee: Box::new(callee),
+                arguments,
+            }),
         ))
     }
 
     pub fn parse_primary(&mut self) -> ParseExpressionResult {
         let next = self.advance()?;
         let wrap = |node: ast::ExpressionKind| Ok(Expression::new(next.span, node));
-        match next.node {
+        match next.kind {
             TokenKind::True => wrap(true.into()),
             TokenKind::False => wrap(false.into()),
             TokenKind::Nil => wrap(ast::Literal::Nil.into()),
@@ -623,15 +634,15 @@ impl Parser {
                 let right_paren = self.expect_token(TokenKind::RightParen)?;
                 Ok(Expression::encapsulating(&next, right_paren, inner.node))
             }
-            TokenKind::Identifier(ident) => wrap(ast::ExpressionKind::Variable(ident)),
+            TokenKind::Identifier => wrap(ast::ExpressionKind::Variable(next.span)),
             TokenKind::This => wrap(ast::ExpressionKind::This),
             TokenKind::Super => {
                 self.expect_token(TokenKind::Dot)?;
-                let (ident_span, name) = self.expect_identifier()?;
+                let ident_span = self.expect_identifier()?;
                 Ok(Expression::encapsulating(
                     &next,
                     ident_span,
-                    ExpressionKind::Super(name),
+                    ExpressionKind::Super(ident_span),
                 ))
             }
             _ => Err(Diagnostic::error(&next, "unexpected token")),

@@ -3,6 +3,7 @@ use std::{
     fs::read_to_string,
     io::{self, IsTerminal, Write},
     path::Path,
+    rc::Rc,
 };
 
 use crate::{
@@ -16,8 +17,9 @@ use crate::{
     },
     parser::{
         ast::{
-            BinaryOp, Class, Declaration, DeclarationKind, Expression, ExpressionKind, Function,
-            LogicalOp, Statement, StatementKind, Unary,
+            Assign, BinaryOp, Call, Class, Declaration, DeclarationKind, Expression,
+            ExpressionKind, Function, Get, If, LogicalOp, Set, Statement, StatementKind, Unary,
+            Var, While,
         },
         diagnostic::has_error,
         node::Node,
@@ -66,62 +68,70 @@ impl Interpreter {
         0
     }
 
-    pub fn execute_declaration(&mut self, decl: &Declaration) -> Result<(), LoxError> {
+    pub fn execute_declaration(
+        &mut self,
+        source: &Rc<str>,
+        decl: &Declaration,
+    ) -> Result<(), LoxError> {
         match &decl.node {
-            DeclarationKind::Statement(stmt) => self.execute_statement(stmt),
-            DeclarationKind::Function(f) => self.execute_fun_declaration(f),
-            DeclarationKind::Class(c) => self.execute_class_declaration(c),
-            DeclarationKind::Var {
+            DeclarationKind::Statement(stmt) => self.execute_statement(source, stmt),
+            DeclarationKind::Function(f) => self.execute_fun_declaration(source, f),
+            DeclarationKind::Class(c) => self.execute_class_declaration(source, c),
+            DeclarationKind::Var(Var {
                 identifier,
                 initial,
-            } => {
+            }) => {
                 let value = if let Some(expr) = initial {
-                    self.evaluate(expr)?
+                    self.evaluate(source, expr)?
                 } else {
                     Value::Nil
                 };
-                self.environment.define(identifier, value);
+                self.environment.define(identifier.in_source(source), value);
                 Ok(())
             }
         }
     }
 
-    pub fn execute_statement(&mut self, stmt: &Statement) -> Result<(), LoxError> {
+    pub fn execute_statement(
+        &mut self,
+        source: &Rc<str>,
+        stmt: &Statement,
+    ) -> Result<(), LoxError> {
         match &stmt.node {
             StatementKind::Print(expr) => {
-                let val = self.evaluate(expr)?;
+                let val = self.evaluate(source, expr)?;
                 println!("{}", val.display());
             }
             StatementKind::Return(expr) => {
                 let val = if let Some(expr) = expr {
-                    self.evaluate(expr)?
+                    self.evaluate(source, expr)?
                 } else {
                     Value::Nil
                 };
                 return Err(LoxError::Return(val));
             }
             StatementKind::Expression(expr) => {
-                self.evaluate(expr)?;
+                self.evaluate(source, expr)?;
             }
             StatementKind::Block(decls) => {
                 let env = self.environment.child();
-                return self.execute_block(decls, env);
+                return self.execute_block(source, decls, env);
             }
-            StatementKind::If {
+            StatementKind::If(If {
                 condition,
                 then_branch,
                 else_branch,
-            } => {
-                let cond_result = self.evaluate(condition)?;
+            }) => {
+                let cond_result = self.evaluate(source, condition)?;
                 if cond_result.is_truthy() {
-                    self.execute_statement(then_branch)?;
+                    self.execute_statement(source, then_branch)?;
                 } else if let Some(else_stmt) = else_branch {
-                    self.execute_statement(else_stmt)?;
+                    self.execute_statement(source, else_stmt)?;
                 }
             }
-            StatementKind::While { condition, body } => {
-                while self.evaluate(condition)?.is_truthy() {
-                    self.execute_statement(body)?;
+            StatementKind::While(While { condition, body }) => {
+                while self.evaluate(source, condition)?.is_truthy() {
+                    self.execute_statement(source, body)?;
                 }
             }
         }
@@ -130,13 +140,14 @@ impl Interpreter {
 
     pub fn execute_block(
         &mut self,
+        source: &Rc<str>,
         decls: &[Declaration],
         env: Environment,
     ) -> Result<(), LoxError> {
         let prev = std::mem::replace(&mut self.environment, env);
         let mut result = Ok(());
         for decl in decls {
-            result = self.execute_declaration(decl);
+            result = self.execute_declaration(source, decl);
             if result.is_err() {
                 break;
             }
@@ -146,28 +157,38 @@ impl Interpreter {
         result
     }
 
-    pub fn construct_fun(&mut self, fun_decl: &Function) -> Gc<value::Function> {
+    pub fn construct_fun(&mut self, source: &Rc<str>, fun_decl: &Function) -> Gc<value::Function> {
         Gc::new(value::Function::new(
-            fun_decl.name.clone(),
+            fun_decl.name.in_source(source).to_owned(),
             self.environment.clone(),
             fun_decl
                 .parameter_names
                 .iter()
-                .map(|(_, name)| name.to_owned())
+                .map(|span| span.in_source(source).to_owned())
                 .collect(),
             fun_decl.body.clone(),
+            source.clone(),
         ))
     }
 
-    pub fn execute_fun_declaration(&mut self, fun_decl: &Function) -> Result<(), LoxError> {
-        let fn_val = Value::Function(self.construct_fun(fun_decl));
-        self.environment.define(&fun_decl.name, fn_val);
+    pub fn execute_fun_declaration(
+        &mut self,
+        source: &Rc<str>,
+        fun_decl: &Function,
+    ) -> Result<(), LoxError> {
+        let fn_val = Value::Function(self.construct_fun(source, fun_decl));
+        self.environment
+            .define(fun_decl.name.in_source(source), fn_val);
         Ok(())
     }
 
-    pub fn execute_class_declaration(&mut self, class_decl: &Class) -> Result<(), LoxError> {
+    pub fn execute_class_declaration(
+        &mut self,
+        source: &Rc<str>,
+        class_decl: &Class,
+    ) -> Result<(), LoxError> {
         let superclass = if let Some(superclass_expr) = &class_decl.superclass {
-            match self.evaluate(superclass_expr)? {
+            match self.evaluate(source, superclass_expr)? {
                 Value::Class(super_class) => Some(super_class),
                 _ => Err(LoxError::SuperclassMustBeClass)?,
             }
@@ -175,7 +196,8 @@ impl Interpreter {
             None
         };
 
-        self.environment.define(&class_decl.name, Value::Nil);
+        let class_name = class_decl.name.in_source(source);
+        self.environment.define(class_name, Value::Nil);
 
         let enclosing_environment = self.environment.clone();
         if let Some(super_gc) = &superclass {
@@ -186,28 +208,28 @@ impl Interpreter {
 
         let mut methods: HashMap<String, Gc<value::Function>> = HashMap::new();
         for func_node in &class_decl.methods {
-            let fun = self.construct_fun(&func_node.node);
-            methods.insert(func_node.node.name.to_owned(), fun);
+            let fun = self.construct_fun(source, &func_node.node);
+            methods.insert(func_node.node.name.in_source(source).to_owned(), fun);
         }
 
         let class_val = Value::Class(Gc::new(value::Class::new(
-            class_decl.name.clone(),
+            class_name.to_owned(),
             superclass,
             methods,
         )));
         self.environment = enclosing_environment;
-        self.environment.assign(&class_decl.name, class_val)?;
+        self.environment.assign(class_name, class_val)?;
         Ok(())
     }
 
-    pub fn evaluate(&mut self, expr: &Expression) -> Result<Value, LoxError> {
+    pub fn evaluate(&mut self, source: &Rc<str>, expr: &Expression) -> Result<Value, LoxError> {
         match &expr.node {
             ExpressionKind::Literal(Literal::Nil) => Ok(Value::Nil),
             ExpressionKind::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
             ExpressionKind::Literal(Literal::String(s)) => Ok(Value::String(s.clone())),
             ExpressionKind::Literal(Literal::Bool(bool)) => Ok(Value::Boolean(*bool)),
             ExpressionKind::This => self.evaluate_variable(expr, "this"),
-            ExpressionKind::Super(name) => {
+            ExpressionKind::Super(name_span) => {
                 let dist = self
                     .resolutions
                     .resolve(expr)
@@ -225,6 +247,7 @@ impl Interpreter {
                             .to_owned(),
                     });
                 };
+                let name = name_span.in_source(source);
                 let Some(fun) = superclass.borrow().get_method(name) else {
                     return Err(LoxError::UndefinedProperty {
                         property: name.to_owned(),
@@ -234,30 +257,35 @@ impl Interpreter {
                     fun.borrow().bind(Value::Instance(this)),
                 )))
             }
-            ExpressionKind::Variable(ident) => self.evaluate_variable(expr, ident),
-            ExpressionKind::Assign(ident, inner) => {
-                let value = self.evaluate(inner)?;
-                if let Some(distance) = self.resolutions.resolve(expr) {
-                    self.environment.assign_at(distance, ident, value.clone())?;
-                } else {
-                    self.globals.assign(ident, value.clone())?;
-                }
-                Ok(value)
+            ExpressionKind::Variable(ident_span) => {
+                self.evaluate_variable(expr, ident_span.in_source(source))
             }
-            ExpressionKind::Call(callee, args) => self.evaluate_call(callee, args),
+            ExpressionKind::Assign(Assign { target, value }) => {
+                let val = self.evaluate(source, value)?;
+                let name = target.in_source(source);
+                if let Some(distance) = self.resolutions.resolve(expr) {
+                    self.environment.assign_at(distance, name, val.clone())?;
+                } else {
+                    self.globals.assign(name, val.clone())?;
+                }
+                Ok(val)
+            }
+            ExpressionKind::Call(Call { callee, arguments }) => {
+                self.evaluate_call(source, callee, arguments)
+            }
             ExpressionKind::Unary(Unary::Negate(inner)) => {
-                if let Value::Number(n) = self.evaluate(inner)? {
+                if let Value::Number(n) = self.evaluate(source, inner)? {
                     Ok(Value::Number(-n))
                 } else {
                     Err(LoxError::InvalidNegation)
                 }
             }
             ExpressionKind::Unary(Unary::Not(inner)) => {
-                let inner_is_truthy = self.evaluate(inner)?.is_truthy();
+                let inner_is_truthy = self.evaluate(source, inner)?.is_truthy();
                 Ok(Value::Boolean(!inner_is_truthy))
             }
             ExpressionKind::Logical(logical) => {
-                let left_val = self.evaluate(&logical.left)?;
+                let left_val = self.evaluate(source, &logical.left)?;
                 let done = match logical.operator {
                     LogicalOp::And => !left_val.is_truthy(),
                     LogicalOp::Or => left_val.is_truthy(),
@@ -266,12 +294,12 @@ impl Interpreter {
                 Ok(if done {
                     left_val
                 } else {
-                    self.evaluate(&logical.right)?
+                    self.evaluate(source, &logical.right)?
                 })
             }
             ExpressionKind::Binary(binary) => {
-                let left = self.evaluate(&binary.left)?;
-                let right = self.evaluate(&binary.right)?;
+                let left = self.evaluate(source, &binary.left)?;
+                let right = self.evaluate(source, &binary.right)?;
 
                 match binary.operator {
                     // `+` is overloaded for numbers and strings; equality works
@@ -301,31 +329,37 @@ impl Interpreter {
                     }
                 }
             }
-            ExpressionKind::Get(expr, ident) => {
-                let object = self.evaluate(expr)?;
-                let Value::Instance(inst) = object.clone() else {
+            ExpressionKind::Get(Get { object, name }) => {
+                let obj_val = self.evaluate(source, object)?;
+                let Value::Instance(inst) = obj_val.clone() else {
                     return Err(LoxError::InvalidPropertyAcess);
                 };
 
-                let res = inst.borrow().get(ident, object).ok_or_else(|| {
+                let field_name = name.in_source(source);
+                let res = inst.borrow().get(field_name, obj_val).ok_or_else(|| {
                     LoxError::UndefinedProperty {
-                        property: ident.to_owned(),
+                        property: field_name.to_owned(),
                     }
                 })?;
 
                 Ok(res)
             }
-            ExpressionKind::Set(object_expr, property, value_expr) => {
-                let object = self.evaluate(object_expr)?;
+            ExpressionKind::Set(Set {
+                object,
+                name,
+                value,
+            }) => {
+                let obj_val = self.evaluate(source, object)?;
 
-                let Value::Instance(inst) = object else {
+                let Value::Instance(inst) = obj_val else {
                     return Err(LoxError::InvalidPropertyAcess);
                 };
 
-                let value = self.evaluate(value_expr)?;
-                inst.borrow_mut().set_field(property, value.clone());
+                let val = self.evaluate(source, value)?;
+                inst.borrow_mut()
+                    .set_field(name.in_source(source), val.clone());
 
-                Ok(value)
+                Ok(val)
             }
         }
     }
@@ -340,13 +374,14 @@ impl Interpreter {
 
     pub fn evaluate_call(
         &mut self,
+        source: &Rc<str>,
         callee_expr: &Expression,
         arg_exprs: &[Expression],
     ) -> Result<Value, LoxError> {
-        let callee = self.evaluate(callee_expr)?;
+        let callee = self.evaluate(source, callee_expr)?;
         let mut args: Vec<Value> = Vec::with_capacity(arg_exprs.len());
         for arg_expr in arg_exprs {
-            args.push(self.evaluate(arg_expr)?);
+            args.push(self.evaluate(source, arg_expr)?);
         }
 
         match callee {
@@ -407,7 +442,8 @@ impl Interpreter {
         let StatementKind::Block(decls) = &fun.body.node else {
             unreachable!("function bodies are always blocks");
         };
-        let result = self.execute_block(decls, fun_env);
+        let source = fun.source.clone();
+        let result = self.execute_block(&source, decls, fun_env);
 
         result
             .map(|_| Value::Nil)
@@ -472,7 +508,7 @@ impl Interpreter {
             self.had_error = true;
             return;
         }
-        let resolution_diags = resolve(&mut self.resolutions, &decls);
+        let resolution_diags = resolve(&mut self.resolutions, &decls, source);
         if has_error(&resolution_diags) {
             for diag in &resolution_diags {
                 eprintln!("{}\n", diag.render(source, color));
@@ -480,6 +516,7 @@ impl Interpreter {
             self.had_error = true;
             return;
         }
+        let source: Rc<str> = Rc::from(source);
         for decl in decls {
             if let DeclarationKind::Statement(Node {
                 node: StatementKind::Expression(expr),
@@ -489,7 +526,7 @@ impl Interpreter {
             {
                 // In the REPL we echo the value of a bare expression statement,
                 // so we bypass `execute_declaration()` and evaluate directly.
-                match self.evaluate(expr) {
+                match self.evaluate(&source, expr) {
                     Ok(val) => {
                         println!("{}", val.repr());
                     }
@@ -499,7 +536,7 @@ impl Interpreter {
                         break;
                     }
                 }
-            } else if let Err(err) = self.execute_declaration(&decl) {
+            } else if let Err(err) = self.execute_declaration(&source, &decl) {
                 self.had_runtime_error = true;
                 eprintln!("Runtime error: {}", err);
                 break;

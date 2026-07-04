@@ -51,3 +51,9 @@ pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
 }
+
+impl From<&Token> for Span {
+    fn from(token: &Token) -> Span {
+        token.span
+    }
+}
