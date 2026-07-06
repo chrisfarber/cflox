@@ -1,9 +1,6 @@
-use std::process::exit;
-
+use cflox::interpreter::Interpreter;
 use clap::Parser;
-
-mod interpreter;
-mod parser;
+use std::process::exit;
 
 #[derive(Parser, Debug)]
 #[command(about = "Chris's lox interpreter")]
@@ -14,7 +11,7 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let mut lox = interpreter::Interpreter::new();
+    let mut lox = Interpreter::new();
 
     if let Some(file_path) = cli.file {
         lox.run_file(&file_path).expect("could not run file?");
