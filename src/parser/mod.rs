@@ -476,11 +476,11 @@ impl Parser {
     }
 
     pub fn parse_logic_or(&mut self) -> ParseExpressionResult {
-        let left = self.parse_logic_and()?;
-        if self.peek_type() == Some(&TokenKind::Or) {
+        let mut left = self.parse_logic_and()?;
+        while self.peek_type() == Some(&TokenKind::Or) {
             self.advance()?;
             let right = self.parse_logic_and()?;
-            Ok(Expression::encapsulating(
+            left = Expression::encapsulating(
                 left.span,
                 right.span,
                 ExpressionKind::Logical(Logical {
@@ -488,18 +488,17 @@ impl Parser {
                     operator: ast::LogicalOp::Or,
                     right: Box::new(right),
                 }),
-            ))
-        } else {
-            Ok(left)
+            );
         }
+        Ok(left)
     }
 
     pub fn parse_logic_and(&mut self) -> ParseExpressionResult {
-        let left = self.parse_equality()?;
-        if self.peek_type() == Some(&TokenKind::And) {
+        let mut left = self.parse_equality()?;
+        while self.peek_type() == Some(&TokenKind::And) {
             self.advance()?;
             let right = self.parse_equality()?;
-            Ok(Expression::encapsulating(
+            left = Expression::encapsulating(
                 left.span,
                 right.span,
                 ExpressionKind::Logical(Logical {
@@ -507,10 +506,9 @@ impl Parser {
                     operator: ast::LogicalOp::And,
                     right: Box::new(right),
                 }),
-            ))
-        } else {
-            Ok(left)
+            );
         }
+        Ok(left)
     }
 
     pub fn parse_equality(&mut self) -> ParseExpressionResult {
@@ -601,7 +599,7 @@ impl Parser {
 
         // lox disallows more than 255 arguments due to some aspect of implementing the
         // bytecode vm
-        if arguments.len() >= 255 {
+        if arguments.len() > 255 {
             return Err(Diagnostic::error(
                 arguments[255].span,
                 "Can't have more than 255 arguments",
@@ -678,7 +676,9 @@ pub fn parse_str(source: &str) -> ParseResult {
 mod tests {
     use crate::parser::{
         Parser,
-        ast::{Binary, BinaryOp, Expression, Literal, Unary},
+        ast::{
+            Binary, BinaryOp, Expression, ExpressionKind, Get, Literal, Logical, LogicalOp, Unary,
+        },
         lexing::scan,
         parse_str,
     };
@@ -701,6 +701,82 @@ mod tests {
     }
 
     #[test]
+    fn chained_or_parses_without_error() {
+        let (_, diags) = parse_str("1 or 2 and 3 or 4;");
+        assert!(diags.is_empty(), "expected no parse errors, got {diags:?}");
+    }
+
+    #[test]
+    fn chained_and_parses_without_error() {
+        // Isolates the same bug in `parse_logic_and` alone, with no `or` involved.
+        let (_, diags) = parse_str("1 and 2 and 3;");
+        assert!(diags.is_empty(), "expected no parse errors, got {diags:?}");
+    }
+
+    #[test]
+    fn logic_or_chains_are_left_associative() {
+        // `1 or 2 or 3` should parse the same way binary operators do:
+        // left-associatively, as `(1 or 2) or 3`.
+        let expr = parse_expr("1 or 2 or 3");
+        let ExpressionKind::Logical(Logical {
+            left,
+            operator,
+            right,
+        }) = expr.node
+        else {
+            panic!("expected a logical expression, got {expr:?}");
+        };
+        assert_eq!(operator, LogicalOp::Or);
+        assert_eq!(*right, Literal::Number(3.0).into());
+        assert!(
+            matches!(left.node, ExpressionKind::Logical(_)),
+            "expected the left side to itself be an `or`, got {left:?}"
+        );
+    }
+
+    #[test]
+    fn logic_and_chains_are_left_associative() {
+        let expr = parse_expr("1 and 2 and 3");
+        let ExpressionKind::Logical(Logical {
+            left,
+            operator,
+            right,
+        }) = expr.node
+        else {
+            panic!("expected a logical expression, got {expr:?}");
+        };
+        assert_eq!(operator, LogicalOp::And);
+        assert_eq!(*right, Literal::Number(3.0).into());
+        assert!(
+            matches!(left.node, ExpressionKind::Logical(_)),
+            "expected the left side to itself be an `and`, got {left:?}"
+        );
+    }
+
+    fn call_with_n_args(n: usize) -> String {
+        let args = (0..n).map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+        format!("f({args})")
+    }
+
+    #[test]
+    fn call_with_exactly_255_arguments_is_allowed() {
+        // 255 is the documented limit ("can't have *more than* 255"), so
+        // this must parse cleanly rather than erroring or panicking.
+        let expr = parse_expr(&call_with_n_args(255));
+        let ExpressionKind::Call(call) = expr.node else {
+            panic!("expected a call expression");
+        };
+        assert_eq!(call.arguments.len(), 255);
+    }
+
+    #[test]
+    fn call_with_256_arguments_is_rejected() {
+        let mut parser = parser_from_str(&call_with_n_args(256));
+        let err = parser.parse_expression().unwrap_err();
+        assert_eq!(err.message, "Can't have more than 255 arguments");
+    }
+
+    #[test]
     fn parse_unary() {
         let mut parser = parser_from_str("!(-10)");
         let expr1 = parser.parse_unary().unwrap();
@@ -708,6 +784,31 @@ mod tests {
             expr1,
             Unary::not(Unary::negate(Literal::Number(10.0).into()).into()).into()
         )
+    }
+
+    #[test]
+    fn parse_numbers() {
+        // Bare numbers, and a dot followed by more digits, are unaffected.
+        let expr = parse_expr("42");
+        assert_eq!(expr.node, ExpressionKind::Literal(Literal::Number(42.0)));
+        let expr = parse_expr("42.5");
+        assert_eq!(expr.node, ExpressionKind::Literal(Literal::Number(42.5)));
+
+        // A trailing dot with no digit after it should NOT be consumed into
+        // the number literal -- otherwise property-access syntax like
+        // `42.foo` could never parse (even though evaluating it is a
+        // separate, later error, since numbers don't have properties)
+        let (_, diags) = parse_str("42.foo;");
+        assert!(diags.is_empty(), "expected no parse errors, got {diags:?}");
+
+        let expr = parse_expr("42.foo");
+        let ExpressionKind::Get(Get { object, name: _ }) = expr.node else {
+            panic!(
+                "expected a Get expression (number literal with a trailing \
+                 property access), got {expr:?}"
+            );
+        };
+        assert_eq!(object.node, ExpressionKind::Literal(Literal::Number(42.0)));
     }
 
     #[test]

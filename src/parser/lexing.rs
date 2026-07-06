@@ -138,18 +138,12 @@ impl<'a> Scanner<'a> {
                 }
                 other => {
                     if other.is_ascii_digit() {
-                        let mut saw_dot = false;
-                        while let Some(c) = self.peek() {
-                            if c == '.' {
-                                if saw_dot {
-                                    break;
-                                } else {
-                                    saw_dot = true;
-                                }
-                            } else if !c.is_ascii_digit() {
-                                break;
-                            }
+                        self.advance_digits();
+                        if self.peek() == Some('.')
+                            && self.peek_next().is_some_and(|c| c.is_ascii_digit())
+                        {
                             self.advance();
+                            self.advance_digits();
                         }
                         self.push_token(TokenKind::Number(
                             self.source[start..self.current]
@@ -200,6 +194,18 @@ impl<'a> Scanner<'a> {
 
     pub fn peek(&self) -> Option<char> {
         self.source[self.current..].chars().next()
+    }
+
+    pub fn peek_next(&self) -> Option<char> {
+        let mut chars = self.source[self.current..].chars();
+        chars.next()?;
+        chars.next()
+    }
+
+    fn advance_digits(&mut self) {
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+            self.advance();
+        }
     }
 
     /// Is the next char the expected char?

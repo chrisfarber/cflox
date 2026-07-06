@@ -7,27 +7,6 @@ static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
 pub type NodeId = u64;
 
 #[derive(Debug, Clone)]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub node: T,
-}
-
-impl<T> PartialEq for Spanned<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.node == other.node
-    }
-}
-
-impl<T> From<&Spanned<T>> for Span {
-    fn from(spanned: &Spanned<T>) -> Span {
-        spanned.span
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct Node<T> {
     id: NodeId,
     pub span: Span,

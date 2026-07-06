@@ -58,8 +58,10 @@ impl Diagnostic {
     /// Render this diagnostic as a multi-line, human-friendly report pointing
     /// at the offending span in `source`.
     ///
-    /// Spans are char offsets (the lexer scans a `Vec<char>`), so all the
-    /// position math here counts chars rather than bytes.
+    /// Spans are byte offsets (see `lexing::Scanner::current`), so all the
+    /// line/column-finding below walks the source by bytes. Displayed
+    /// columns and the underline width are still counted in chars, so a
+    /// multi-byte character earlier on the line doesn't throw off the caret.
     ///
     /// Pass `color: true` to include ANSI color escapes.
     pub fn render(&self, source: &str, color: bool) -> String {
@@ -71,17 +73,16 @@ impl Diagnostic {
             }
         };
 
-        let chars: Vec<char> = source.chars().collect();
-        let len = chars.len();
+        let len = source.len();
         let start = self.span.start.min(len);
         let end = self.span.end.clamp(start, len);
 
-        // Find the line containing `start`: its 1-based number and the char
+        // Find the line containing `start`: its 1-based number and the byte
         // offset where it begins.
         let mut line_no = 1usize;
         let mut line_start = 0usize;
-        for (i, c) in chars.iter().enumerate().take(start) {
-            if *c == '\n' {
+        for (i, b) in source.as_bytes().iter().enumerate().take(start) {
+            if *b == b'\n' {
                 line_no += 1;
                 line_start = i + 1;
             }
@@ -89,16 +90,20 @@ impl Diagnostic {
 
         // Extend to the end of that line.
         let mut line_end = line_start;
-        while line_end < len && chars[line_end] != '\n' {
+        while line_end < len && source.as_bytes()[line_end] != b'\n' {
             line_end += 1;
         }
 
-        let line_text: String = chars[line_start..line_end].iter().collect();
-        let column = start - line_start; // 0-based column within the line
+        let line_text = &source[line_start..line_end];
+        let column = line_text[..start - line_start].chars().count(); // 0-based column within the line
 
         // Underline the span, confined to this line, with at least one caret.
         let underline_end = end.min(line_end);
-        let width = underline_end.saturating_sub(start).max(1);
+        let width = line_text[..underline_end - line_start]
+            .chars()
+            .count()
+            .saturating_sub(column)
+            .max(1);
 
         let sev = self.severity;
         let gutter = line_no.to_string();
@@ -210,5 +215,24 @@ mod tests {
         let out = diag.render(source, false);
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[4], "  │    ^");
+    }
+
+    #[test]
+    fn multibyte_prefix_does_not_shift_span() {
+        // "café" contains a 2-byte UTF-8 char ('é'). The span below points at
+        // "bar", whose *byte* offset (6) differs from its *char* offset (5).
+        // If line/column math ever regresses to indexing chars by byte
+        // offset, the caret drifts onto "r ba" instead of "bar".
+        let source = "café bar";
+        let start = source.find("bar").unwrap();
+        let span = Span {
+            start,
+            end: start + 3,
+        };
+        let diag = Diagnostic::error(span, "problem");
+        let out = diag.render(source, false);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[3], "1 │ café bar");
+        assert_eq!(lines[4], "  │      ^^^");
     }
 }
